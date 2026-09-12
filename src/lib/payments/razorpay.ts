@@ -17,10 +17,12 @@ export async function createRazorpayOrder(
   const keySecret = env.RAZORPAY_KEY_SECRET;
 
   if (!keyId || !keySecret || keyId === 'rzp_test_sample') {
-    // Return mock order for seamless sandbox testing
+    if (env.NODE_ENV === 'production') {
+      throw new Error('Razorpay is not configured for production');
+    }
     return {
       id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      amount: amountInINR * 100, // paise
+      amount: amountInINR * 100,
       currency: 'INR',
       receipt: receiptId,
       status: 'created',
@@ -35,7 +37,7 @@ export async function createRazorpayOrder(
       Authorization: `Basic ${auth}`,
     },
     body: JSON.stringify({
-      amount: Math.round(amountInINR * 100), // in paise
+      amount: Math.round(amountInINR * 100),
       currency: 'INR',
       receipt: receiptId,
       notes,
@@ -55,9 +57,7 @@ export async function verifyRazorpaySignature(
   paymentId: string,
   signature: string
 ): Promise<boolean> {
-  if (!orderId || !paymentId || !signature) {
-    return false;
-  }
+  if (!orderId || !paymentId || !signature) return false;
 
   const keySecret = env.RAZORPAY_KEY_SECRET;
   if (!keySecret || keySecret === 'sample_secret') {
@@ -65,8 +65,7 @@ export async function verifyRazorpaySignature(
       console.error('CRITICAL: Razorpay secret is not configured in production');
       return false;
     }
-    // Sandbox auto-pass for mock orders in development/test mode only
-    return true;
+    return orderId.startsWith('order_mock_');
   }
 
   const body = `${orderId}|${paymentId}`;
@@ -84,9 +83,7 @@ export async function verifyRazorpaySignature(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  if (hex.length !== signature.length) {
-    return false;
-  }
+  if (hex.length !== signature.length) return false;
 
   let diff = 0;
   for (let i = 0; i < hex.length; i++) {
