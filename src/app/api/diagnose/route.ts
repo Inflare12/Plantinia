@@ -5,17 +5,19 @@ import { checkAndDeductDiagnosisEntitlement } from '@/lib/payments/entitlements'
 import { db } from '@/lib/db/adapter';
 
 export async function POST(req: NextRequest) {
-  let entitlementDeducted = false;
+  let currentUser: Awaited<ReturnType<typeof getSessionUser>> = null;
+  let mediaType: 'image' | 'video' = 'image';
   let originalImageCredits: number | undefined;
   let originalVideoCredits: number | undefined;
-  let currentUser: Awaited<ReturnType<typeof getSessionUser>> = null;
+  let deducted = false;
 
   try {
     currentUser = await getSessionUser(req);
     if (!currentUser) return NextResponse.json({ error: 'Please login or create a free account to diagnose plants' }, { status: 401 });
 
     const body = await req.json();
-    const { mediaUrl, mediaType = 'image', plantId, plantSpeciesHint, notes } = body;
+    const { mediaUrl, plantId, plantSpeciesHint, notes } = body;
+    mediaType = body.mediaType || 'image';
     if (!mediaUrl) return NextResponse.json({ error: 'Plant image or video media is required' }, { status: 400 });
     if (mediaType !== 'image' && mediaType !== 'video') return NextResponse.json({ error: 'Invalid media type' }, { status: 400 });
     if (typeof mediaUrl !== 'string' || mediaUrl.length > 4096) return NextResponse.json({ error: 'Invalid media URL' }, { status: 400 });
@@ -27,12 +29,9 @@ export async function POST(req: NextRequest) {
     if (!entitlement.allowed) {
       return NextResponse.json({ error: entitlement.reason, remainingCredits: entitlement.remainingCredits, remainingVideoCredits: entitlement.remainingVideoCredits }, { status: 403 });
     }
-    entitlementDeducted = mediaType === 'video'
-      ? entitlement.remainingVideoCredits !== undefined
-      : entitlement.remainingCredits !== undefined;
+    deducted = mediaType === 'video' ? entitlement.remainingVideoCredits !== undefined : entitlement.remainingCredits !== undefined;
 
-    const aiEngine = getAIEngine();
-    const diagnosisResult = await aiEngine.diagnosePlant({ mediaUrl, mediaType, plantSpeciesHint, notes });
+    const diagnosisResult = await getAIEngine().diagnosePlant({ mediaUrl, mediaType, plantSpeciesHint, notes });
 
     let verifiedPlant: any = null;
     if (plantId) {
@@ -65,10 +64,7 @@ export async function POST(req: NextRequest) {
     if (verifiedPlant) {
       const newStatus = diagnosisResult.severity === 'critical'
         ? 'critical'
-        : diagnosisResult.severity === 'severe' || diagnosisResult.severity === 'moderate'
-          ? 'warning'
-          : 'healthy';
-
+        : diagnosisResult.severity === 'severe' || diagnosisResult.severity === 'moderate' ? 'warning' : 'healthy';
       await db.plants.update(verifiedPlant.id, { healthStatus: newStatus });
       await db.timeline.create({
         plantId: verifiedPlant.id,
@@ -95,14 +91,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ diagnosis: newDiagnosis, remainingCredits: entitlement.remainingCredits, remainingVideoCredits: entitlement.remainingVideoCredits });
   } catch (error: any) {
-    // A failed AI/database operation must not permanently consume a user's scan credit.
-    if (currentUser && entitlementDeducted) {
+    // AI/database failures must not consume a metered scan. The original values are
+    // captured before deduction and restored only when this request actually deducted one.
+    if (currentUser && deducted) {
       try {
-        if (originalImageCredits !== undefined && originalImageCredits !== currentUser.creditsRemaining) {
-          await db.users.update(currentUser.id, { creditsRemaining: originalImageCredits });
-        }
-        if (originalVideoCredits !== undefined && originalVideoCredits !== currentUser.videoCreditsRemaining) {
+        if (mediaType === 'video' && originalVideoCredits !== undefined) {
           await db.users.update(currentUser.id, { videoCreditsRemaining: originalVideoCredits });
+        } else if (mediaType === 'image' && originalImageCredits !== undefined) {
+          await db.users.update(currentUser.id, { creditsRemaining: originalImageCredits });
         }
       } catch (refundError) {
         console.error('Failed to refund diagnosis entitlement:', refundError);
