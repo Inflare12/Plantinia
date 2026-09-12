@@ -25,6 +25,7 @@ model User {
   paymentProvider              String?
   subscriptionId               String?
   creditsRemaining             Int                  @default(5)
+  videoCreditsRemaining        Int                  @default(0)
   apiKey                       String?              @unique
   createdAt                    DateTime             @default(now())
   updatedAt                    DateTime             @updatedAt
@@ -73,7 +74,7 @@ model Diagnosis {
   pathogenType          PathogenType @default(NONE)
   confidence            Float
   severity              Severity     @default(MILD)
-  uncertainty           String?      @default("low") // "low" | "medium" | "high"
+  uncertainty           String?      @default("low")
   symptoms              Json
   causes                Json
   prognosis             String
@@ -83,9 +84,9 @@ model Diagnosis {
   preventativeMeasures  Json
   boundingBoxes         Json?
   aiProviderUsed        String
-  modelVersion          String?      // Track which model version was used
-  candidates            Json?       // Alternative diagnoses when uncertainty is high
-  knowledgeReferences   Json?       // References to knowledge base items used
+  modelVersion          String?
+  candidates            Json?
+  knowledgeReferences   Json?
   adminReviewed         Boolean      @default(false)
   adminAccuracyFeedback String?
   createdAt             DateTime     @default(now())
@@ -120,7 +121,6 @@ model CarePlanTask {
   dueDate     DateTime
   isCompleted Boolean  @default(false)
   notes       String?
-  createdAt   DateTime @default(now())
   plant       Plant?   @relation(fields: [plantId], references: [id])
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -138,19 +138,19 @@ model ChatMessage {
 
 model KnowledgeItem {
   id             String   @id @default(cuid())
-  type           String   // "plant" | "disease" | "pest" | "symptom" | "nutrient_deficiency"
+  type           String
   name           String
   scientificName String?  @unique
-  commonNames    Json?    // Array of common names
+  commonNames    Json?
   category       String?
   description    String?
-  affectedPlants Json?    // Array of plant IDs or names
-  symptoms       Json?    // Array of symptoms
-  treatment      Json?    // Treatment information
-  prevention     Json?    // Prevention information
-  sources        Json?    // Array of source references
+  affectedPlants Json?
+  symptoms       Json?
+  treatment      Json?
+  prevention     Json?
+  sources        Json?
   imageUrl       String?
-  metadata       Json?    // Additional flexible metadata
+  metadata       Json?
   isActive       Boolean  @default(true)
   lastUpdated    DateTime @default(now())
   @@index([type])
@@ -170,6 +170,8 @@ model Invoice {
   receiptUrl        String?
   createdAt         DateTime @default(now())
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerPaymentId])
+  @@index([userId])
 }
 
 model UserFeedback {
@@ -190,14 +192,14 @@ model ModelMetadata {
   id              String   @id @default(cuid())
   name            String
   version         String   @unique
-  type            String   // "plant_identification" | "disease_detection" | "pest_detection" | "image_embedding"
-  status          String   @default("staging") // "active" | "staging" | "deprecated"
+  type            String
+  status          String   @default("staging")
   description     String
   trainedOn       String
   accuracy        Float?
-  classes         Json?     // Array of class names
-  inputSize       Json?     // { width: number, height: number }
-  preprocessing   Json?     // Array of preprocessing steps
+  classes         Json?
+  inputSize       Json?
+  preprocessing   Json?
   lastUpdated     DateTime @default(now())
   license         String?
   citation        String?
@@ -208,46 +210,9 @@ model ModelMetadata {
   @@index([isActive])
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
-enum SubscriptionTier {
-  FREE
-  CARE
-  DOCTOR
-  PRO
-  FARM
-}
-
-enum SubscriptionStatus {
-  ACTIVE
-  TRIALING
-  CANCELED
-  PAST_DUE
-}
-
-enum HealthStatus {
-  HEALTHY
-  WARNING
-  CRITICAL
-  TREATING
-}
-
-enum PathogenType {
-  FUNGAL
-  BACTERIAL
-  VIRAL
-  PEST
-  ENVIRONMENTAL
-  NONE
-}
-
-enum Severity {
-  MILD
-  MODERATE
-  SEVERE
-  CRITICAL
-}
-
+enum Role { USER ADMIN }
+enum SubscriptionTier { FREE CARE DOCTOR PRO FARM }
+enum SubscriptionStatus { ACTIVE TRIALING CANCELED PAST_DUE }
+enum HealthStatus { HEALTHY WARNING CRITICAL TREATING }
+enum PathogenType { FUNGAL BACTERIAL VIRAL PEST ENVIRONMENTAL NONE }
+enum Severity { MILD MODERATE SEVERE CRITICAL }
