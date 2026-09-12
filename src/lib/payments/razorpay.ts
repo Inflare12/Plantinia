@@ -55,9 +55,17 @@ export async function verifyRazorpaySignature(
   paymentId: string,
   signature: string
 ): Promise<boolean> {
+  if (!orderId || !paymentId || !signature) {
+    return false;
+  }
+
   const keySecret = env.RAZORPAY_KEY_SECRET;
   if (!keySecret || keySecret === 'sample_secret') {
-    // Sandbox auto-pass for test mock orders
+    if (env.NODE_ENV === 'production') {
+      console.error('CRITICAL: Razorpay secret is not configured in production');
+      return false;
+    }
+    // Sandbox auto-pass for mock orders in development/test mode only
     return true;
   }
 
@@ -76,5 +84,13 @@ export async function verifyRazorpaySignature(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  return hex === signature;
+  if (hex.length !== signature.length) {
+    return false;
+  }
+
+  let diff = 0;
+  for (let i = 0; i < hex.length; i++) {
+    diff |= hex.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return diff === 0;
 }

@@ -1,13 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/adapter';
-import { SUBSCRIPTION_PLANS, SubscriptionTier, getPlan } from '@/lib/payments/types';
+import { SubscriptionTier, getPlan } from '@/lib/payments/types';
+import { env } from '@/lib/env';
+
+async function verifyStripeWebhookSignature(rawBody: string, signatureHeader: string | null): Promise<boolean> {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    if (env.NODE_ENV === 'production') {
+      console.error('CRITICAL: Stripe webhook secret is not configured in production');
+      return false;
+    }
+    return true;
+  }
+
+  if (!signatureHeader) {
+    return false;
+  }
+
+  try {
+    const items = signatureHeader.split(',');
+    let timestamp = '';
+    const signatures: string[] = [];
+    for (const item of items) {
+      const [k, v] = item.split('=');
+      if (k === 't') timestamp = v;
+      if (k === 'v1') signatures.push(v);
+    }
+
+    if (!timestamp || signatures.length === 0) return false;
+
+    // Check tolerance (5 minutes)
+    const tolerance = 300;
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - parseInt(timestamp, 10)) > tolerance) {
+      return false;
+    }
+
+    const payloadToSign = `${timestamp}.${rawBody}`;
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(webhookSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sigBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(payloadToSign));
+    const expectedHex = Array.from(new Uint8Array(sigBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    return signatures.some((sig) => {
+      if (sig.length !== expectedHex.length) return false;
+      let diff = 0;
+      for (let i = 0; i < sig.length; i++) {
+        diff |= sig.charCodeAt(i) ^ expectedHex.charCodeAt(i);
+      }
+      return diff === 0;
+    });
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('stripe-signature');
 
-    console.log('[Stripe Webhook Received]', { length: rawBody.length, hasSignature: !!signature });
+    const isValid = await verifyStripeWebhookSignature(rawBody, signature);
+    if (!isValid) {
+      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
+    }
 
     let event: any = {};
     try {

@@ -3,18 +3,27 @@ import { z } from 'zod';
 import { randomInt } from 'crypto';
 import { db } from '@/lib/db/adapter';
 import { hashPassword } from '@/lib/auth/session';
-import { signJWT } from '@/lib/auth/jwt';
 import { getEmailProvider, generateVerificationEmailHtml } from '@/lib/email';
 import { env } from '@/lib/env';
+import { checkRateLimit, getClientIp } from '@/lib/auth/rate-limit';
 
 const signupSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name must not exceed 100 characters'),
+  email: z.string().email('Invalid email address').max(254, 'Email must not exceed 254 characters').transform((e) => e.toLowerCase().trim()),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password must not exceed 128 characters'),
 });
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(`signup:${ip}`, 10, 3600000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many signup attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const result = signupSchema.safeParse(body);
 
@@ -50,7 +59,7 @@ export async function POST(req: NextRequest) {
 
       const emailSent = await emailProvider.sendEmail({
         to: email,
-        subject: 'Verify your Plantinia Account ??',
+        subject: 'Verify your Plantinia Account 🌿',
         html: generateVerificationEmailHtml(name, verificationCode),
       });
 
@@ -68,7 +77,8 @@ export async function POST(req: NextRequest) {
           email: existingUser.email,
           isEmailVerified: false,
         },
-        message: 'A new verification code has been sent.',
+        message: 'A new verification code has been sent to your email.',
+        requiresEmailVerification: true,
       });
     }
 
@@ -94,7 +104,7 @@ export async function POST(req: NextRequest) {
 
     const emailSent = await emailProvider.sendEmail({
       to: email,
-      subject: 'Verify your Plantinia Account ??',
+      subject: 'Verify your Plantinia Account 🌿',
       html: generateVerificationEmailHtml(name, verificationCode),
     });
 
@@ -105,39 +115,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const token = await signJWT({
-      userId: newUser.id,
-      email: newUser.email,
-      role: newUser.role,
-      subscriptionTier: newUser.subscriptionTier,
-    });
-
-    const response = NextResponse.json({
-      user: {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
-        subscriptionTier: newUser.subscriptionTier,
-        creditsRemaining: newUser.creditsRemaining,
-        isEmailVerified: newUser.isEmailVerified,
+    // Do NOT issue a full session token/cookie to unverified users.
+    // The user must verify their email with the 6-digit code before session issuance.
+    return NextResponse.json(
+      {
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          subscriptionTier: newUser.subscriptionTier,
+          creditsRemaining: newUser.creditsRemaining,
+          isEmailVerified: false,
+        },
+        message: 'Registration successful. Please verify your email with the 6-digit code sent to your inbox.',
+        requiresEmailVerification: true,
       },
-      token,
-    });
-
-    response.cookies.set('plantinia_token', token, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 30 * 24 * 60 * 60,
-      path: '/',
-    });
-
-    return response;
+      { status: 201 }
+    );
   } catch (error: any) {
     console.error('Signup error:', error);
+    const errorMessage = env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred during registration.'
+      : (error.message || 'Internal server error');
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

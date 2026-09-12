@@ -5,9 +5,14 @@ import { getPlantWeatherAdvisory } from '@/lib/weather/open-meteo';
 
 export async function GET(req: NextRequest) {
   try {
-    // Optional bearer secret check for Vercel Cron
     const authHeader = req.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (process.env.NODE_ENV === 'production') {
+      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+        return NextResponse.json({ error: 'Unauthorized cron trigger' }, { status: 401 });
+      }
+    } else if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized cron trigger' }, { status: 401 });
     }
 

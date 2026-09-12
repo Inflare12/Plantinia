@@ -33,23 +33,27 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, species, commonName, imageUrl, location, sunlightNeeds, wateringFrequencyDays, notes } = body;
 
-    if (!name) {
+    if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Plant nickname is required' }, { status: 400 });
     }
 
+    const safeWateringDays = Math.max(1, Math.min(365, parseInt(String(wateringFrequencyDays), 10) || 7));
+
     const newPlant = await db.plants.create({
       userId: user.id,
-      name,
-      species: species || 'Unknown botanical species',
-      commonName: commonName || name,
-      imageUrl: imageUrl || 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=600&auto=format&fit=crop&q=80',
-      location: location || 'indoor',
+      name: name.trim().slice(0, 100),
+      species: species ? String(species).trim().slice(0, 150) : 'Unknown botanical species',
+      commonName: commonName ? String(commonName).trim().slice(0, 150) : name.trim().slice(0, 100),
+      imageUrl: imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')
+        ? imageUrl.slice(0, 500)
+        : 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=600&auto=format&fit=crop&q=80',
+      location: location && typeof location === 'string' ? location.slice(0, 50) : 'indoor',
       healthStatus: 'healthy',
-      sunlightNeeds: sunlightNeeds || 'indirect',
-      wateringFrequencyDays: Number(wateringFrequencyDays) || 7,
+      sunlightNeeds: sunlightNeeds && typeof sunlightNeeds === 'string' ? sunlightNeeds.slice(0, 50) : 'indirect',
+      wateringFrequencyDays: safeWateringDays,
       lastWateredDate: new Date().toISOString(),
-      nextWateringDate: new Date(Date.now() + (Number(wateringFrequencyDays) || 7) * 24 * 3600 * 1000).toISOString(),
-      notes: notes || '',
+      nextWateringDate: new Date(Date.now() + safeWateringDays * 24 * 3600 * 1000).toISOString(),
+      notes: notes ? String(notes).slice(0, 2000) : '',
     });
 
     // Automatically create initial timeline entry

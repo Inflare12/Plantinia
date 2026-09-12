@@ -4,7 +4,7 @@ export const SEED_USERS: User[] = [
   {
     id: "usr_admin_001",
     email: "admin@plantinia.app",
-    passwordHash: "demo12345", // In production hashed with bcrypt
+    passwordHash: "pbkdf2_sha256$310000$ccea1f5744937f55fd3b8bb900fbcf03$aedb5a00547b36e7e23862a9f7fce0546aacb87efc599d5cfefd345310964ebc",
     name: "Dr. Elena Vance",
     avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
     role: "admin",
@@ -22,7 +22,7 @@ export const SEED_USERS: User[] = [
   {
     id: "usr_demo_002",
     email: "demo@plantinia.app",
-    passwordHash: "demo12345",
+    passwordHash: "pbkdf2_sha256$310000$ccea1f5744937f55fd3b8bb900fbcf03$aedb5a00547b36e7e23862a9f7fce0546aacb87efc599d5cfefd345310964ebc",
     name: "Aarav Sharma",
     avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
     role: "user",

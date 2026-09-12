@@ -70,12 +70,22 @@ export async function signJWT(payload: Omit<JWTPayload, 'iat' | 'exp'>, expiresI
 
 export async function verifyJWT(token: string): Promise<JWTPayload | null> {
   try {
+    if (!token || typeof token !== 'string') return null;
+
     const parts = token.split('.');
     if (parts.length !== 3) return null;
 
     const [headerB64, payloadB64, sigB64] = parts;
-    const data = `${headerB64}.${payloadB64}`;
+    if (!headerB64 || !payloadB64 || !sigB64) return null;
 
+    // Verify header algorithm and type
+    const headerJson = base64UrlDecode(headerB64);
+    const header = JSON.parse(headerJson);
+    if (!header || header.alg !== 'HS256' || header.typ !== 'JWT') {
+      return null;
+    }
+
+    const data = `${headerB64}.${payloadB64}`;
     const key = await getCryptoKey(env.JWT_SECRET);
 
     let base64 = sigB64.replace(/-/g, '+').replace(/_/g, '/');
@@ -100,8 +110,19 @@ export async function verifyJWT(token: string): Promise<JWTPayload | null> {
     const payloadJson = base64UrlDecode(payloadB64);
     const payload = JSON.parse(payloadJson) as JWTPayload;
 
+    if (!payload || typeof payload !== 'object') return null;
+    if (!payload.userId || !payload.email || typeof payload.userId !== 'string') {
+      return null;
+    }
+
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
+    // Token must have an exp timestamp and not be expired
+    if (!payload.exp || typeof payload.exp !== 'number' || payload.exp < now) {
+      return null;
+    }
+
+    // Disallow future issued tokens with 5 minutes clock skew tolerance
+    if (payload.iat && typeof payload.iat === 'number' && payload.iat > now + 300) {
       return null;
     }
 

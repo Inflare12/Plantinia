@@ -9,6 +9,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const plant = await db.plants.findById(params.id);
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    }
+
     const timeline = await db.timeline.listByPlant(params.id);
     return NextResponse.json({ timeline });
   } catch (error: any) {

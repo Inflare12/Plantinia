@@ -270,6 +270,8 @@ if (process.env.NODE_ENV !== 'production') {
   globalForStore.inMemoryStore = store;
 }
 
+const isProd = process.env.NODE_ENV === 'production';
+
 const isPostgres = () => {
   const url = process.env.DATABASE_URL;
   return typeof url === 'string' && (url.startsWith('postgres://') || url.startsWith('postgresql://'));
@@ -278,6 +280,10 @@ const isPostgres = () => {
 export const db = {
   users: {
     async findById(id: string): Promise<User | null> {
+      if (isProd) {
+        const user = await prisma.user.findUnique({ where: { id } });
+        return user ? mapUser(user) : null;
+      }
       if (isPostgres()) {
         try {
           const user = await prisma.user.findUnique({ where: { id } });
@@ -288,6 +294,12 @@ export const db = {
     },
 
     async findByEmail(email: string): Promise<User | null> {
+      if (isProd) {
+        const user = await prisma.user.findUnique({
+          where: { email: email.toLowerCase().trim() },
+        });
+        return user ? mapUser(user) : null;
+      }
       if (isPostgres()) {
         try {
           const user = await prisma.user.findUnique({
@@ -299,32 +311,55 @@ export const db = {
       return store.users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim()) ?? null;
     },
 
-    async create(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+    async findByApiKey(apiKey: string): Promise<User | null> {
+      if (!apiKey || apiKey.length < 16) return null;
+      if (isProd) {
+        const user = await prisma.user.findUnique({
+          where: { apiKey },
+        });
+        return user ? mapUser(user) : null;
+      }
       if (isPostgres()) {
         try {
-          const created = await prisma.user.create({
-            data: {
-              email: user.email.toLowerCase().trim(),
-              passwordHash: user.passwordHash,
-              name: user.name,
-              avatarUrl: user.avatarUrl,
-              role: roleToPrisma(user.role),
-              isEmailVerified: user.isEmailVerified,
-              verificationToken: user.verificationToken,
-              verificationCode: user.verificationCode,
-              verificationCodeExpiresAt: user.verificationCodeExpiresAt ? new Date(user.verificationCodeExpiresAt) : undefined,
-              resetPasswordToken: user.resetPasswordToken,
-              subscriptionTier: tierToPrisma(user.subscriptionTier),
-              subscriptionStatus: statusToPrisma(user.subscriptionStatus),
-              subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd
-                ? new Date(user.subscriptionCurrentPeriodEnd)
-                : undefined,
-              paymentProvider: user.paymentProvider ?? undefined,
-              subscriptionId: user.subscriptionId,
-              creditsRemaining: user.creditsRemaining,
-              apiKey: user.apiKey,
-            },
+          const user = await prisma.user.findUnique({
+            where: { apiKey },
           });
+          if (user) return mapUser(user);
+        } catch {}
+      }
+      return store.users.find((u) => u.apiKey === apiKey) ?? null;
+    },
+
+    async create(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+      const data = {
+        email: user.email.toLowerCase().trim(),
+        passwordHash: user.passwordHash,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        role: roleToPrisma(user.role),
+        isEmailVerified: user.isEmailVerified,
+        verificationToken: user.verificationToken,
+        verificationCode: user.verificationCode,
+        verificationCodeExpiresAt: user.verificationCodeExpiresAt ? new Date(user.verificationCodeExpiresAt) : undefined,
+        resetPasswordToken: user.resetPasswordToken,
+        subscriptionTier: tierToPrisma(user.subscriptionTier),
+        subscriptionStatus: statusToPrisma(user.subscriptionStatus),
+        subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd
+          ? new Date(user.subscriptionCurrentPeriodEnd)
+          : undefined,
+        paymentProvider: user.paymentProvider ?? undefined,
+        subscriptionId: user.subscriptionId,
+        creditsRemaining: user.creditsRemaining,
+        apiKey: user.apiKey,
+      };
+
+      if (isProd) {
+        const created = await prisma.user.create({ data });
+        return mapUser(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.user.create({ data });
           const mapped = mapUser(created);
           store.users.push(mapped);
           return mapped;
@@ -343,31 +378,38 @@ export const db = {
     },
 
     async update(id: string, updates: Partial<User>): Promise<User | null> {
+      const data: any = {};
+
+      if (updates.email !== undefined) data.email = updates.email.toLowerCase().trim();
+      if (updates.passwordHash !== undefined) data.passwordHash = updates.passwordHash;
+      if (updates.name !== undefined) data.name = updates.name;
+      if (updates.avatarUrl !== undefined) data.avatarUrl = updates.avatarUrl;
+      if (updates.role !== undefined) data.role = roleToPrisma(updates.role);
+      if (updates.isEmailVerified !== undefined) data.isEmailVerified = updates.isEmailVerified;
+      if (updates.verificationToken !== undefined) data.verificationToken = updates.verificationToken;
+      if (updates.verificationCode !== undefined) data.verificationCode = updates.verificationCode;
+      if (updates.verificationCodeExpiresAt !== undefined) data.verificationCodeExpiresAt = updates.verificationCodeExpiresAt ? new Date(updates.verificationCodeExpiresAt) : null;
+      if (updates.resetPasswordToken !== undefined) data.resetPasswordToken = updates.resetPasswordToken;
+      if (updates.subscriptionTier !== undefined) data.subscriptionTier = tierToPrisma(updates.subscriptionTier);
+      if (updates.subscriptionStatus !== undefined) data.subscriptionStatus = statusToPrisma(updates.subscriptionStatus);
+      if (updates.subscriptionCurrentPeriodEnd !== undefined) {
+        data.subscriptionCurrentPeriodEnd = updates.subscriptionCurrentPeriodEnd
+          ? new Date(updates.subscriptionCurrentPeriodEnd)
+          : null;
+      }
+      if (updates.paymentProvider !== undefined) data.paymentProvider = updates.paymentProvider;
+      if (updates.subscriptionId !== undefined) data.subscriptionId = updates.subscriptionId;
+      if (updates.creditsRemaining !== undefined) data.creditsRemaining = updates.creditsRemaining;
+      if (updates.apiKey !== undefined) data.apiKey = updates.apiKey;
+
+      if (isProd) {
+        const updated = await prisma.user.update({
+          where: { id },
+          data,
+        });
+        return mapUser(updated);
+      }
       if (isPostgres()) {
-        const data: any = {};
-
-        if (updates.email !== undefined) data.email = updates.email.toLowerCase().trim();
-        if (updates.passwordHash !== undefined) data.passwordHash = updates.passwordHash;
-        if (updates.name !== undefined) data.name = updates.name;
-        if (updates.avatarUrl !== undefined) data.avatarUrl = updates.avatarUrl;
-        if (updates.role !== undefined) data.role = roleToPrisma(updates.role);
-        if (updates.isEmailVerified !== undefined) data.isEmailVerified = updates.isEmailVerified;
-        if (updates.verificationToken !== undefined) data.verificationToken = updates.verificationToken;
-        if (updates.verificationCode !== undefined) data.verificationCode = updates.verificationCode;
-        if (updates.verificationCodeExpiresAt !== undefined) data.verificationCodeExpiresAt = updates.verificationCodeExpiresAt ? new Date(updates.verificationCodeExpiresAt) : null;
-        if (updates.resetPasswordToken !== undefined) data.resetPasswordToken = updates.resetPasswordToken;
-        if (updates.subscriptionTier !== undefined) data.subscriptionTier = tierToPrisma(updates.subscriptionTier);
-        if (updates.subscriptionStatus !== undefined) data.subscriptionStatus = statusToPrisma(updates.subscriptionStatus);
-        if (updates.subscriptionCurrentPeriodEnd !== undefined) {
-          data.subscriptionCurrentPeriodEnd = updates.subscriptionCurrentPeriodEnd
-            ? new Date(updates.subscriptionCurrentPeriodEnd)
-            : null;
-        }
-        if (updates.paymentProvider !== undefined) data.paymentProvider = updates.paymentProvider;
-        if (updates.subscriptionId !== undefined) data.subscriptionId = updates.subscriptionId;
-        if (updates.creditsRemaining !== undefined) data.creditsRemaining = updates.creditsRemaining;
-        if (updates.apiKey !== undefined) data.apiKey = updates.apiKey;
-
         try {
           const updated = await prisma.user.update({
             where: { id },
@@ -393,6 +435,12 @@ export const db = {
     },
 
     async listAll(): Promise<User[]> {
+      if (isProd) {
+        const users = await prisma.user.findMany({
+          orderBy: { createdAt: 'desc' },
+        });
+        return users.map(mapUser);
+      }
       if (isPostgres()) {
         try {
           const users = await prisma.user.findMany({
@@ -407,37 +455,79 @@ export const db = {
 
   plants: {
     async listByUser(userId: string): Promise<Plant[]> {
-      const plants = await prisma.plant.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
-      return plants.map(mapPlant);
+      if (isProd) {
+        const plants = await prisma.plant.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return plants.map(mapPlant);
+      }
+      if (isPostgres()) {
+        try {
+          const plants = await prisma.plant.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return plants.map(mapPlant);
+        } catch {}
+      }
+      return store.plants
+        .filter((p) => p.userId === userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     },
 
     async findById(id: string): Promise<Plant | null> {
-      const plant = await prisma.plant.findUnique({ where: { id } });
-      return plant ? mapPlant(plant) : null;
+      if (isProd) {
+        const plant = await prisma.plant.findUnique({ where: { id } });
+        return plant ? mapPlant(plant) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const plant = await prisma.plant.findUnique({ where: { id } });
+          if (plant) return mapPlant(plant);
+        } catch {}
+      }
+      return store.plants.find((p) => p.id === id) ?? null;
     },
 
     async create(plant: Omit<Plant, 'id' | 'createdAt' | 'updatedAt'>): Promise<Plant> {
-      const created = await prisma.plant.create({
-        data: {
-          userId: plant.userId,
-          name: plant.name,
-          species: plant.species,
-          commonName: plant.commonName,
-          imageUrl: plant.imageUrl,
-          location: plant.location,
-          healthStatus: healthToPrisma(plant.healthStatus),
-          sunlightNeeds: plant.sunlightNeeds,
-          wateringFrequencyDays: plant.wateringFrequencyDays,
-          lastWateredDate: plant.lastWateredDate ? new Date(plant.lastWateredDate) : undefined,
-          nextWateringDate: plant.nextWateringDate ? new Date(plant.nextWateringDate) : undefined,
-          notes: plant.notes,
-        },
-      });
+      const data = {
+        userId: plant.userId,
+        name: plant.name,
+        species: plant.species,
+        commonName: plant.commonName,
+        imageUrl: plant.imageUrl,
+        location: plant.location,
+        healthStatus: healthToPrisma(plant.healthStatus),
+        sunlightNeeds: plant.sunlightNeeds,
+        wateringFrequencyDays: plant.wateringFrequencyDays,
+        lastWateredDate: plant.lastWateredDate ? new Date(plant.lastWateredDate) : undefined,
+        nextWateringDate: plant.nextWateringDate ? new Date(plant.nextWateringDate) : undefined,
+        notes: plant.notes,
+      };
 
-      return mapPlant(created);
+      if (isProd) {
+        const created = await prisma.plant.create({ data });
+        return mapPlant(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.plant.create({ data });
+          const mapped = mapPlant(created);
+          store.plants.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newPlant: Plant = {
+        id: `plant_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        updatedAt: now,
+        ...plant,
+      };
+      store.plants.push(newPlant);
+      return newPlant;
     },
 
     async update(id: string, updates: Partial<Plant>): Promise<Plant | null> {
@@ -460,80 +550,168 @@ export const db = {
       }
       if (updates.notes !== undefined) data.notes = updates.notes;
 
-      try {
+      if (isProd) {
         const updated = await prisma.plant.update({
           where: { id },
           data,
         });
         return mapPlant(updated);
-      } catch {
-        return null;
       }
+      if (isPostgres()) {
+        try {
+          const updated = await prisma.plant.update({
+            where: { id },
+            data,
+          });
+          const mapped = mapPlant(updated);
+          const inMemIdx = store.plants.findIndex((p) => p.id === id);
+          if (inMemIdx !== -1) {
+            store.plants[inMemIdx] = { ...store.plants[inMemIdx], ...updates, updatedAt: new Date().toISOString() };
+          }
+          return mapped;
+        } catch {}
+      }
+
+      const inMemIdx = store.plants.findIndex((p) => p.id === id);
+      if (inMemIdx === -1) return null;
+      store.plants[inMemIdx] = {
+        ...store.plants[inMemIdx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      return { ...store.plants[inMemIdx] };
     },
 
     async delete(id: string): Promise<boolean> {
-      try {
+      if (isProd) {
         await prisma.plant.delete({ where: { id } });
         return true;
-      } catch {
-        return false;
       }
+      if (isPostgres()) {
+        try {
+          await prisma.plant.delete({ where: { id } });
+          const inMemIdx = store.plants.findIndex((p) => p.id === id);
+          if (inMemIdx !== -1) store.plants.splice(inMemIdx, 1);
+          return true;
+        } catch {}
+      }
+      const inMemIdx = store.plants.findIndex((p) => p.id === id);
+      if (inMemIdx !== -1) {
+        store.plants.splice(inMemIdx, 1);
+        return true;
+      }
+      return false;
     },
   },
 
   diagnoses: {
     async listByUser(userId: string): Promise<Diagnosis[]> {
-      const diagnoses = await prisma.diagnosis.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
-      return diagnoses.map(mapDiagnosis);
+      if (isProd) {
+        const diagnoses = await prisma.diagnosis.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return diagnoses.map(mapDiagnosis);
+      }
+      if (isPostgres()) {
+        try {
+          const diagnoses = await prisma.diagnosis.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return diagnoses.map(mapDiagnosis);
+        } catch {}
+      }
+      return store.diagnoses
+        .filter((d) => d.userId === userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     },
 
     async listByPlant(plantId: string): Promise<Diagnosis[]> {
-      const diagnoses = await prisma.diagnosis.findMany({
-        where: { plantId },
-        orderBy: { createdAt: 'desc' },
-      });
-      return diagnoses.map(mapDiagnosis);
+      if (isProd) {
+        const diagnoses = await prisma.diagnosis.findMany({
+          where: { plantId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return diagnoses.map(mapDiagnosis);
+      }
+      if (isPostgres()) {
+        try {
+          const diagnoses = await prisma.diagnosis.findMany({
+            where: { plantId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return diagnoses.map(mapDiagnosis);
+        } catch {}
+      }
+      return store.diagnoses
+        .filter((d) => d.plantId === plantId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     },
 
     async findById(id: string): Promise<Diagnosis | null> {
-      const diagnosis = await prisma.diagnosis.findUnique({ where: { id } });
-      return diagnosis ? mapDiagnosis(diagnosis) : null;
+      if (isProd) {
+        const diagnosis = await prisma.diagnosis.findUnique({ where: { id } });
+        return diagnosis ? mapDiagnosis(diagnosis) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const diagnosis = await prisma.diagnosis.findUnique({ where: { id } });
+          if (diagnosis) return mapDiagnosis(diagnosis);
+        } catch {}
+      }
+      return store.diagnoses.find((d) => d.id === id) ?? null;
     },
 
     async create(diagnosis: Omit<Diagnosis, 'id' | 'createdAt'>): Promise<Diagnosis> {
-      const created = await prisma.diagnosis.create({
-        data: {
-          userId: diagnosis.userId,
-          plantId: diagnosis.plantId,
-          mediaType: diagnosis.mediaType,
-          mediaUrl: diagnosis.mediaUrl,
-          identifiedSpecies: diagnosis.identifiedSpecies,
-          diseaseName: diagnosis.diseaseName,
-          pathogenType: pathogenToPrisma(diagnosis.pathogenType),
-          confidence: diagnosis.confidence,
-          severity: severityToPrisma(diagnosis.severity),
-          uncertainty: diagnosis.uncertainty,
-          symptoms: diagnosis.symptoms as any,
-          causes: diagnosis.causes as any,
-          prognosis: diagnosis.prognosis,
-          treatmentSteps: diagnosis.treatmentSteps as any,
-          organicRemedies: diagnosis.organicRemedies as any,
-          chemicalRemedies: diagnosis.chemicalRemedies as any,
-          preventativeMeasures: diagnosis.preventativeMeasures as any,
-          boundingBoxes: diagnosis.boundingBoxes as any,
-          aiProviderUsed: diagnosis.aiProviderUsed,
-          modelVersion: diagnosis.modelVersion,
-          candidates: diagnosis.candidates as any,
-          knowledgeReferences: diagnosis.knowledgeReferences as any,
-          adminReviewed: diagnosis.adminReviewed,
-          adminAccuracyFeedback: diagnosis.adminAccuracyFeedback,
-        },
-      });
+      const data = {
+        userId: diagnosis.userId,
+        plantId: diagnosis.plantId,
+        mediaType: diagnosis.mediaType,
+        mediaUrl: diagnosis.mediaUrl,
+        identifiedSpecies: diagnosis.identifiedSpecies,
+        diseaseName: diagnosis.diseaseName,
+        pathogenType: pathogenToPrisma(diagnosis.pathogenType),
+        confidence: diagnosis.confidence,
+        severity: severityToPrisma(diagnosis.severity),
+        uncertainty: diagnosis.uncertainty,
+        symptoms: diagnosis.symptoms as any,
+        causes: diagnosis.causes as any,
+        prognosis: diagnosis.prognosis,
+        treatmentSteps: diagnosis.treatmentSteps as any,
+        organicRemedies: diagnosis.organicRemedies as any,
+        chemicalRemedies: diagnosis.chemicalRemedies as any,
+        preventativeMeasures: diagnosis.preventativeMeasures as any,
+        boundingBoxes: diagnosis.boundingBoxes as any,
+        aiProviderUsed: diagnosis.aiProviderUsed,
+        modelVersion: diagnosis.modelVersion,
+        candidates: diagnosis.candidates as any,
+        knowledgeReferences: diagnosis.knowledgeReferences as any,
+        adminReviewed: diagnosis.adminReviewed,
+        adminAccuracyFeedback: diagnosis.adminAccuracyFeedback,
+      };
 
-      return mapDiagnosis(created);
+      if (isProd) {
+        const created = await prisma.diagnosis.create({ data });
+        return mapDiagnosis(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.diagnosis.create({ data });
+          const mapped = mapDiagnosis(created);
+          store.diagnoses.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newDiagnosis: Diagnosis = {
+        id: `diag_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...diagnosis,
+      };
+      store.diagnoses.push(newDiagnosis);
+      return newDiagnosis;
     },
 
     async update(id: string, updates: Partial<Diagnosis>): Promise<Diagnosis | null> {
@@ -564,132 +742,311 @@ export const db = {
       if (updates.adminReviewed !== undefined) data.adminReviewed = updates.adminReviewed;
       if (updates.adminAccuracyFeedback !== undefined) data.adminAccuracyFeedback = updates.adminAccuracyFeedback;
 
-      try {
+      if (isProd) {
         const updated = await prisma.diagnosis.update({
           where: { id },
           data,
         });
         return mapDiagnosis(updated);
-      } catch {
-        return null;
       }
+      if (isPostgres()) {
+        try {
+          const updated = await prisma.diagnosis.update({
+            where: { id },
+            data,
+          });
+          const mapped = mapDiagnosis(updated);
+          const inMemIdx = store.diagnoses.findIndex((d) => d.id === id);
+          if (inMemIdx !== -1) {
+            store.diagnoses[inMemIdx] = { ...store.diagnoses[inMemIdx], ...updates };
+          }
+          return mapped;
+        } catch {}
+      }
+
+      const inMemIdx = store.diagnoses.findIndex((d) => d.id === id);
+      if (inMemIdx === -1) return null;
+      store.diagnoses[inMemIdx] = {
+        ...store.diagnoses[inMemIdx],
+        ...updates,
+      };
+      return { ...store.diagnoses[inMemIdx] };
     },
 
     async listAll(): Promise<Diagnosis[]> {
-      const diagnoses = await prisma.diagnosis.findMany({
-        orderBy: { createdAt: 'desc' },
-      });
-      return diagnoses.map(mapDiagnosis);
+      if (isProd) {
+        const diagnoses = await prisma.diagnosis.findMany({
+          orderBy: { createdAt: 'desc' },
+        });
+        return diagnoses.map(mapDiagnosis);
+      }
+      if (isPostgres()) {
+        try {
+          const diagnoses = await prisma.diagnosis.findMany({
+            orderBy: { createdAt: 'desc' },
+          });
+          return diagnoses.map(mapDiagnosis);
+        } catch {}
+      }
+      return [...store.diagnoses];
     },
   },
 
   timeline: {
     async listByPlant(plantId: string): Promise<PlantTimelineEvent[]> {
-      const events = await prisma.plantTimelineEvent.findMany({
-        where: { plantId },
-        orderBy: { createdAt: 'desc' },
-      });
-      return events.map(mapTimelineEvent);
+      if (isProd) {
+        const events = await prisma.plantTimelineEvent.findMany({
+          where: { plantId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return events.map(mapTimelineEvent);
+      }
+      if (isPostgres()) {
+        try {
+          const events = await prisma.plantTimelineEvent.findMany({
+            where: { plantId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return events.map(mapTimelineEvent);
+        } catch {}
+      }
+      return store.timeline
+        .filter((e) => e.plantId === plantId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     },
 
     async create(event: Omit<PlantTimelineEvent, 'id' | 'createdAt'>): Promise<PlantTimelineEvent> {
-      const created = await prisma.plantTimelineEvent.create({
-        data: {
-          plantId: event.plantId,
-          userId: event.userId,
-          eventType: event.eventType,
-          title: event.title,
-          description: event.description,
-          imageUrl: event.imageUrl,
-        },
-      });
+      const data = {
+        plantId: event.plantId,
+        userId: event.userId,
+        eventType: event.eventType,
+        title: event.title,
+        description: event.description,
+        imageUrl: event.imageUrl,
+      };
 
-      return mapTimelineEvent(created);
+      if (isProd) {
+        const created = await prisma.plantTimelineEvent.create({ data });
+        return mapTimelineEvent(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.plantTimelineEvent.create({ data });
+          const mapped = mapTimelineEvent(created);
+          store.timeline.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newEvent: PlantTimelineEvent = {
+        id: `evt_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...event,
+      };
+      store.timeline.push(newEvent);
+      return newEvent;
     },
   },
 
   careTasks: {
     async listByUser(userId: string): Promise<CarePlanTask[]> {
-      const tasks = await prisma.carePlanTask.findMany({
-        where: { userId },
-        orderBy: { dueDate: 'asc' },
-      });
-      return tasks.map(mapCareTask);
+      if (isProd) {
+        const tasks = await prisma.carePlanTask.findMany({
+          where: { userId },
+          orderBy: { dueDate: 'asc' },
+        });
+        return tasks.map(mapCareTask);
+      }
+      if (isPostgres()) {
+        try {
+          const tasks = await prisma.carePlanTask.findMany({
+            where: { userId },
+            orderBy: { dueDate: 'asc' },
+          });
+          return tasks.map(mapCareTask);
+        } catch {}
+      }
+      return store.careTasks
+        .filter((t) => t.userId === userId)
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    },
+
+    async findById(id: string): Promise<CarePlanTask | null> {
+      if (isProd) {
+        const task = await prisma.carePlanTask.findUnique({ where: { id } });
+        return task ? mapCareTask(task) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const task = await prisma.carePlanTask.findUnique({ where: { id } });
+          if (task) return mapCareTask(task);
+        } catch {}
+      }
+      return store.careTasks.find((t) => t.id === id) ?? null;
     },
 
     async create(task: Omit<CarePlanTask, 'id' | 'createdAt'>): Promise<CarePlanTask> {
-      const created = await prisma.carePlanTask.create({
-        data: {
-          userId: task.userId,
-          plantId: task.plantId,
-          plantName: task.plantName,
-          title: task.title,
-          category: task.category,
-          dueDate: new Date(task.dueDate),
-          isCompleted: task.isCompleted,
-          notes: task.notes,
-        },
-      });
+      const data = {
+        userId: task.userId,
+        plantId: task.plantId,
+        plantName: task.plantName,
+        title: task.title,
+        category: task.category,
+        dueDate: new Date(task.dueDate),
+        isCompleted: task.isCompleted,
+        notes: task.notes,
+      };
 
-      return mapCareTask(created);
+      if (isProd) {
+        const created = await prisma.carePlanTask.create({ data });
+        return mapCareTask(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.carePlanTask.create({ data });
+          const mapped = mapCareTask(created);
+          store.careTasks.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newTask: CarePlanTask = {
+        id: `task_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...task,
+      };
+      store.careTasks.push(newTask);
+      return newTask;
     },
 
     async toggleComplete(id: string): Promise<CarePlanTask | null> {
-      try {
+      if (isProd) {
         const task = await prisma.carePlanTask.findUnique({ where: { id } });
         if (!task) return null;
-
         const updated = await prisma.carePlanTask.update({
           where: { id },
           data: { isCompleted: !task.isCompleted },
         });
-
         return mapCareTask(updated);
-      } catch {
-        return null;
       }
+      if (isPostgres()) {
+        try {
+          const task = await prisma.carePlanTask.findUnique({ where: { id } });
+          if (task) {
+            const updated = await prisma.carePlanTask.update({
+              where: { id },
+              data: { isCompleted: !task.isCompleted },
+            });
+            const mapped = mapCareTask(updated);
+            const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+            if (inMemIdx !== -1) {
+              store.careTasks[inMemIdx].isCompleted = mapped.isCompleted;
+            }
+            return mapped;
+          }
+        } catch {}
+      }
+      const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+      if (inMemIdx === -1) return null;
+      store.careTasks[inMemIdx].isCompleted = !store.careTasks[inMemIdx].isCompleted;
+      return { ...store.careTasks[inMemIdx] };
     },
 
     async delete(id: string): Promise<boolean> {
-      try {
+      if (isProd) {
         await prisma.carePlanTask.delete({ where: { id } });
         return true;
-      } catch {
-        return false;
       }
+      if (isPostgres()) {
+        try {
+          await prisma.carePlanTask.delete({ where: { id } });
+          const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+          if (inMemIdx !== -1) store.careTasks.splice(inMemIdx, 1);
+          return true;
+        } catch {}
+      }
+      const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+      if (inMemIdx !== -1) {
+        store.careTasks.splice(inMemIdx, 1);
+        return true;
+      }
+      return false;
     },
   },
 
   chatMessages: {
     async listByUser(userId: string, plantId?: string): Promise<ChatMessage[]> {
-      const messages = await prisma.chatMessage.findMany({
-        where: {
-          userId,
-          ...(plantId ? { plantId } : {}),
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      return messages.map(mapChatMessage);
+      if (isProd) {
+        const messages = await prisma.chatMessage.findMany({
+          where: {
+            userId,
+            ...(plantId ? { plantId } : {}),
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        return messages.map(mapChatMessage);
+      }
+      if (isPostgres()) {
+        try {
+          const messages = await prisma.chatMessage.findMany({
+            where: {
+              userId,
+              ...(plantId ? { plantId } : {}),
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+          return messages.map(mapChatMessage);
+        } catch {}
+      }
+      return store.chatMessages
+        .filter((m) => m.userId === userId && (!plantId || m.plantId === plantId))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     },
 
     async create(msg: Omit<ChatMessage, 'id' | 'createdAt'>): Promise<ChatMessage> {
-      const created = await prisma.chatMessage.create({
-        data: {
-          userId: msg.userId,
-          plantId: msg.plantId,
-          role: msg.role,
-          content: msg.content,
-          mediaUrl: msg.mediaUrl,
-        },
-      });
+      const data = {
+        userId: msg.userId,
+        plantId: msg.plantId,
+        role: msg.role,
+        content: msg.content,
+        mediaUrl: msg.mediaUrl,
+      };
 
-      return mapChatMessage(created);
+      if (isProd) {
+        const created = await prisma.chatMessage.create({ data });
+        return mapChatMessage(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.chatMessage.create({ data });
+          const mapped = mapChatMessage(created);
+          store.chatMessages.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newMsg: ChatMessage = {
+        id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...msg,
+      };
+      store.chatMessages.push(newMsg);
+      return newMsg;
     },
   },
 
   knowledge: {
     async listAll(): Promise<KnowledgeItem[]> {
+      if (isProd) {
+        const items = await prisma.knowledgeItem.findMany({
+          where: { isActive: true },
+          orderBy: { lastUpdated: 'desc' },
+        });
+        return items.map(mapKnowledgeItem);
+      }
       if (isPostgres()) {
         try {
           const items = await prisma.knowledgeItem.findMany({
@@ -703,6 +1060,12 @@ export const db = {
     },
 
     async getByScientificName(scientificName: string): Promise<KnowledgeItem | null> {
+      if (isProd) {
+        const item = await prisma.knowledgeItem.findUnique({ 
+          where: { scientificName, isActive: true } 
+        });
+        return item ? mapKnowledgeItem(item) : null;
+      }
       if (isPostgres()) {
         try {
           const item = await prisma.knowledgeItem.findUnique({ 
@@ -720,7 +1083,24 @@ export const db = {
 
     async search(query: string, type?: string): Promise<KnowledgeItem[]> {
       const q = query.toLowerCase();
-      
+
+      if (isProd) {
+        const whereClause: any = { isActive: true };
+        if (type) whereClause.type = type;
+
+        const items = await prisma.knowledgeItem.findMany({
+          where: whereClause,
+        });
+
+        return (items.map(mapKnowledgeItem) as KnowledgeItem[]).filter(
+          (k: KnowledgeItem) =>
+            k.name.toLowerCase().includes(q) ||
+            (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
+            (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
+            (k.description && k.description.toLowerCase().includes(q))
+        );
+      }
+
       if (isPostgres()) {
         try {
           const whereClause: any = { isActive: true };
@@ -757,6 +1137,12 @@ export const db = {
 
   modelMetadata: {
     async listAll(): Promise<ModelMetadata[]> {
+      if (isProd) {
+        const models = await prisma.modelMetadata.findMany({
+          orderBy: { registeredAt: 'desc' },
+        });
+        return models.map(mapModelMetadata);
+      }
       if (isPostgres()) {
         try {
           const models = await prisma.modelMetadata.findMany({
@@ -769,6 +1155,16 @@ export const db = {
     },
 
     async getActive(modelType: string): Promise<ModelMetadata | null> {
+      if (isProd) {
+        const model = await prisma.modelMetadata.findFirst({
+          where: { 
+            type: modelType as any,
+            isActive: true,
+            status: 'active' as any
+          },
+        });
+        return model ? mapModelMetadata(model) : null;
+      }
       if (isPostgres()) {
         try {
           const model = await prisma.modelMetadata.findFirst({
@@ -789,6 +1185,23 @@ export const db = {
     },
 
     async setActive(id: string): Promise<ModelMetadata | null> {
+      if (isProd) {
+        const target = await prisma.modelMetadata.findUnique({ where: { id } });
+        if (!target) return null;
+        await prisma.$transaction([
+          prisma.modelMetadata.updateMany({
+            where: { type: target.type as any },
+            data: { isActive: false },
+          }),
+          prisma.modelMetadata.update({
+            where: { id },
+            data: { isActive: true, status: 'active' as any },
+          }),
+        ]);
+
+        const updated = await prisma.modelMetadata.findUnique({ where: { id } });
+        return updated ? mapModelMetadata(updated) : null;
+      }
       if (isPostgres()) {
         try {
           const target = await prisma.modelMetadata.findUnique({ where: { id } });
@@ -820,26 +1233,30 @@ export const db = {
     },
 
     async create(model: Omit<ModelMetadata, 'id'>): Promise<ModelMetadata> {
+      const data = {
+        name: model.name,
+        version: model.version,
+        type: model.type,
+        status: model.status,
+        description: model.description,
+        trainedOn: model.trainedOn,
+        accuracy: model.accuracy,
+        classes: model.classes as any,
+        inputSize: model.inputSize as any,
+        preprocessing: model.preprocessing as any,
+        license: model.license,
+        citation: model.citation,
+        isActive: model.isActive,
+        registeredAt: new Date(model.registeredAt),
+      };
+
+      if (isProd) {
+        const created = await prisma.modelMetadata.create({ data });
+        return mapModelMetadata(created);
+      }
       if (isPostgres()) {
         try {
-          const created = await prisma.modelMetadata.create({
-            data: {
-              name: model.name,
-              version: model.version,
-              type: model.type,
-              status: model.status,
-              description: model.description,
-              trainedOn: model.trainedOn,
-              accuracy: model.accuracy,
-              classes: model.classes as any,
-              inputSize: model.inputSize as any,
-              preprocessing: model.preprocessing as any,
-              license: model.license,
-              citation: model.citation,
-              isActive: model.isActive,
-              registeredAt: new Date(model.registeredAt),
-            },
-          });
+          const created = await prisma.modelMetadata.create({ data });
           return mapModelMetadata(created);
         } catch {}
       }
@@ -869,60 +1286,122 @@ export const db = {
 
   userFeedback: {
     async listByUser(userId: string): Promise<UserFeedback[]> {
-      const feedback = await prisma.userFeedback.findMany({
-        where: { userId },
-        orderBy: { timestamp: 'desc' },
-      });
-      return feedback.map(mapUserFeedback);
+      if (isProd) {
+        const feedback = await prisma.userFeedback.findMany({
+          where: { userId },
+          orderBy: { timestamp: 'desc' },
+        });
+        return feedback.map(mapUserFeedback);
+      }
+      if (isPostgres()) {
+        try {
+          const feedback = await prisma.userFeedback.findMany({
+            where: { userId },
+            orderBy: { timestamp: 'desc' },
+          });
+          return feedback.map(mapUserFeedback);
+        } catch {}
+      }
+      return store.userFeedback.filter((f) => f.userId === userId);
     },
 
     async getByDiagnosis(diagnosisId: string): Promise<UserFeedback | null> {
-      const feedback = await prisma.userFeedback.findUnique({
-        where: { diagnosisId },
-      });
-      return feedback ? mapUserFeedback(feedback) : null;
+      if (isProd) {
+        const feedback = await prisma.userFeedback.findUnique({
+          where: { diagnosisId },
+        });
+        return feedback ? mapUserFeedback(feedback) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const feedback = await prisma.userFeedback.findUnique({
+            where: { diagnosisId },
+          });
+          if (feedback) return mapUserFeedback(feedback);
+        } catch {}
+      }
+      return store.userFeedback.find((f) => f.diagnosisId === diagnosisId) ?? null;
     },
 
     async create(feedback: Omit<UserFeedback, 'id'>): Promise<UserFeedback> {
-      const created = await prisma.userFeedback.create({
-        data: {
-          userId: feedback.userId,
-          diagnosisId: feedback.diagnosisId,
-          wasCorrect: feedback.wasCorrect,
-          correction: feedback.correction,
-          notes: feedback.notes,
-          timestamp: new Date(feedback.timestamp),
-        },
-      });
+      const data = {
+        userId: feedback.userId,
+        diagnosisId: feedback.diagnosisId,
+        wasCorrect: feedback.wasCorrect,
+        correction: feedback.correction,
+        notes: feedback.notes,
+        timestamp: new Date(feedback.timestamp),
+      };
 
-      return mapUserFeedback(created);
+      if (isProd) {
+        const created = await prisma.userFeedback.create({ data });
+        return mapUserFeedback(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.userFeedback.create({ data });
+          return mapUserFeedback(created);
+        } catch {}
+      }
+      const newFeedback: UserFeedback = { ...feedback, id: `fb_${Date.now()}` };
+      store.userFeedback.push(newFeedback);
+      return newFeedback;
     },
   },
 
   invoices: {
     async listByUser(userId: string): Promise<Invoice[]> {
-      const invoices = await prisma.invoice.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
-      return invoices.map(mapInvoice);
+      if (isProd) {
+        const invoices = await prisma.invoice.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return invoices.map(mapInvoice);
+      }
+      if (isPostgres()) {
+        try {
+          const invoices = await prisma.invoice.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return invoices.map(mapInvoice);
+        } catch {}
+      }
+      return store.invoices.filter((i) => i.userId === userId);
     },
 
     async create(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<Invoice> {
-      const created = await prisma.invoice.create({
-        data: {
-          userId: invoice.userId,
-          amount: invoice.amount,
-          currency: invoice.currency,
-          provider: invoice.provider,
-          providerPaymentId: invoice.providerPaymentId,
-          status: invoice.status,
-          plan: invoice.plan,
-          receiptUrl: invoice.receiptUrl,
-        },
-      });
+      const data = {
+        userId: invoice.userId,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        provider: invoice.provider,
+        providerPaymentId: invoice.providerPaymentId,
+        status: invoice.status,
+        plan: invoice.plan,
+        receiptUrl: invoice.receiptUrl,
+      };
 
-      return mapInvoice(created);
+      if (isProd) {
+        const created = await prisma.invoice.create({ data });
+        return mapInvoice(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.invoice.create({ data });
+          const mapped = mapInvoice(created);
+          store.invoices.push(mapped);
+          return mapped;
+        } catch {}
+      }
+      const now = new Date().toISOString();
+      const newInvoice: Invoice = {
+        id: `inv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...invoice,
+      };
+      store.invoices.push(newInvoice);
+      return newInvoice;
     },
   },
 };

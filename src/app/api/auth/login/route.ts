@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db/adapter';
-import { verifyPassword } from '@/lib/auth/session';
+import { verifyPassword, dummyVerifyPassword } from '@/lib/auth/session';
 import { signJWT } from '@/lib/auth/jwt';
 import { env } from '@/lib/env';
+import { checkRateLimit, getClientIp, resetRateLimit } from '@/lib/auth/rate-limit';
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
+  email: z.string().email('Invalid email address').max(254, 'Email too long').transform((e) => e.toLowerCase().trim()),
+  password: z.string().min(1, 'Password is required').max(128, 'Password must not exceed 128 characters'),
 });
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
     const body = await req.json();
     const result = loginSchema.safeParse(body);
 
@@ -23,9 +25,23 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, password } = result.data;
+
+    // Rate limiting: brute-force mitigation per IP and per account
+    const ipRateCheck = checkRateLimit(`login-ip:${ip}`, 15, 900000);
+    const emailRateCheck = checkRateLimit(`login-email:${email}`, 5, 900000);
+
+    if (!ipRateCheck.allowed || !emailRateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many failed login attempts. Please wait 15 minutes before trying again.' },
+        { status: 429 }
+      );
+    }
+
     const user = await db.users.findByEmail(email);
 
     if (!user) {
+      // Execute constant-time dummy verification to protect against account enumeration via timing
+      await dummyVerifyPassword();
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
@@ -49,6 +65,10 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
+
+    // Reset rate limits on successful authentication
+    resetRateLimit(`login-email:${email}`);
+    resetRateLimit(`login-ip:${ip}`);
 
     const token = await signJWT({
       userId: user.id,
@@ -82,8 +102,11 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (error: any) {
     console.error('Login error:', error);
+    const errorMessage = env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred during login.'
+      : (error.message || 'Internal server error');
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

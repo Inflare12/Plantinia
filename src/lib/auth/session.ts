@@ -4,8 +4,11 @@ import { db } from '../db/adapter';
 import { User } from '../db/schema';
 
 export async function hashPassword(password: string): Promise<string> {
-  if (password.length < 8) {
+  if (!password || typeof password !== 'string' || password.length < 8) {
     throw new Error('Password must be at least 8 characters');
+  }
+  if (password.length > 128) {
+    throw new Error('Password must not exceed 128 characters');
   }
 
   const enc = new TextEncoder();
@@ -38,6 +41,13 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   try {
+    if (!password || typeof password !== 'string' || password.length > 128) {
+      return false;
+    }
+    if (!stored || typeof stored !== 'string') {
+      return false;
+    }
+
     const parts = stored.split('$');
     if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
     const iterations = Number(parts[1]);
@@ -69,6 +79,15 @@ export async function verifyPassword(password: string, stored: string): Promise<
   }
 }
 
+// Pre-computed dummy hash to run constant-time PBKDF2 calculation when an account is not found,
+// preventing timing attacks / email enumeration on login.
+const DUMMY_TIMING_HASH =
+  'pbkdf2_sha256$310000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000';
+
+export async function dummyVerifyPassword(): Promise<void> {
+  await verifyPassword('timing-defense-string-non-empty', DUMMY_TIMING_HASH);
+}
+
 export async function getSessionUser(req: NextRequest): Promise<User | null> {
   const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
   let token: string | null = null;
@@ -83,9 +102,8 @@ export async function getSessionUser(req: NextRequest): Promise<User | null> {
   }
 
   const apiKey = req.headers.get('x-api-key');
-  if (apiKey) {
-    const allUsers = await db.users.listAll();
-    const matched = allUsers.find((u) => u.apiKey === apiKey);
+  if (apiKey && apiKey.length >= 16) {
+    const matched = await db.users.findByApiKey(apiKey);
     if (matched) return matched;
   }
 

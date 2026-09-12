@@ -39,10 +39,19 @@ export async function POST(req: NextRequest) {
       notes,
     });
 
+    // Verify plant ownership if plantId provided
+    let verifiedPlant: any = null;
+    if (plantId) {
+      const plant = await db.plants.findById(plantId);
+      if (plant && (plant.userId === user.id || user.role === 'admin')) {
+        verifiedPlant = plant;
+      }
+    }
+
     // Save diagnosis record to database
     const newDiagnosis = await db.diagnoses.create({
       userId: user.id,
-      plantId: plantId || undefined,
+      plantId: verifiedPlant ? verifiedPlant.id : undefined,
       mediaType,
       mediaUrl,
       identifiedSpecies: diagnosisResult.identifiedSpecies,
@@ -62,11 +71,10 @@ export async function POST(req: NextRequest) {
       adminReviewed: false,
     });
 
-    // If linked to a garden plant, update plant health and add timeline entry
-    if (plantId) {
-      const plant = await db.plants.findById(plantId);
-      if (plant && plant.userId === user.id) {
-        const newStatus =
+    // If linked to a verified garden plant, update plant health and add timeline entry
+    if (verifiedPlant) {
+      const plant = verifiedPlant;
+      const newStatus =
           diagnosisResult.severity === 'critical'
             ? 'critical'
             : diagnosisResult.severity === 'severe' || diagnosisResult.severity === 'moderate'

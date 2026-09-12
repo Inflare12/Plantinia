@@ -30,15 +30,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Task title is required' }, { status: 400 });
     }
 
+    let verifiedPlantId: string | undefined = undefined;
+    let verifiedPlantName: string | undefined = plantName || undefined;
+    if (plantId) {
+      const plant = await db.plants.findById(plantId);
+      if (plant && (plant.userId === user.id || user.role === 'admin')) {
+        verifiedPlantId = plant.id;
+        verifiedPlantName = plant.name;
+      }
+    }
+
     const task = await db.careTasks.create({
       userId: user.id,
-      plantId: plantId || undefined,
-      plantName: plantName || undefined,
-      title,
+      plantId: verifiedPlantId,
+      plantName: verifiedPlantName,
+      title: String(title).slice(0, 200),
       category: category || 'water',
       dueDate: dueDate || new Date().toISOString().split('T')[0],
       isCompleted: false,
-      notes: notes || '',
+      notes: notes ? String(notes).slice(0, 1000) : '',
     });
 
     return NextResponse.json({ task }, { status: 201 });

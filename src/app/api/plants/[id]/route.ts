@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     const plant = await db.plants.findById(params.id);
-    if (!plant || plant.userId !== user.id) {
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
       return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
     }
 
@@ -31,12 +31,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     const plant = await db.plants.findById(params.id);
-    if (!plant || plant.userId !== user.id) {
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
       return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
     }
 
-    const updates = await req.json();
-    const updated = await db.plants.update(params.id, updates);
+    const body = await req.json();
+    const allowedFields = [
+      'name',
+      'species',
+      'commonName',
+      'imageUrl',
+      'location',
+      'healthStatus',
+      'sunlightNeeds',
+      'wateringFrequencyDays',
+      'lastWateredDate',
+      'nextWateringDate',
+      'notes',
+    ];
+    const safeUpdates: Record<string, any> = {};
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) {
+        safeUpdates[key] = body[key];
+      }
+    }
+
+    const updated = await db.plants.update(params.id, safeUpdates);
 
     return NextResponse.json({ plant: updated });
   } catch (error: any) {
@@ -52,7 +72,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     const plant = await db.plants.findById(params.id);
-    if (!plant || plant.userId !== user.id) {
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
       return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
     }
 

@@ -1,13 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db/adapter';
-import { SUBSCRIPTION_PLANS, SubscriptionTier, getPlan } from '@/lib/payments/types';
+import { SubscriptionTier, getPlan } from '@/lib/payments/types';
+import { env } from '@/lib/env';
+
+async function verifyRazorpayWebhookSignature(rawBody: string, signature: string | null): Promise<boolean> {
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || env.RAZORPAY_KEY_SECRET;
+
+  if (!webhookSecret || webhookSecret === 'sample_secret') {
+    if (env.NODE_ENV === 'production') {
+      console.error('CRITICAL: Razorpay webhook secret is not configured in production');
+      return false;
+    }
+    return true;
+  }
+
+  if (!signature) {
+    return false;
+  }
+
+  try {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(webhookSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sigBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+    const hex = Array.from(new Uint8Array(sigBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    if (hex.length !== signature.length) return false;
+    let diff = 0;
+    for (let i = 0; i < hex.length; i++) {
+      diff |= hex.charCodeAt(i) ^ signature.charCodeAt(i);
+    }
+    return diff === 0;
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-razorpay-signature');
 
-    console.log('[Razorpay Webhook Received]', { length: rawBody.length, hasSignature: !!signature });
+    const isValid = await verifyRazorpayWebhookSignature(rawBody, signature);
+    if (!isValid) {
+      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
+    }
 
     let event: any = {};
     try {

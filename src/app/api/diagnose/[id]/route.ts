@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     const diagnosis = await db.diagnoses.findById(params.id);
-    if (!diagnosis) {
+    if (!diagnosis || (diagnosis.userId !== user.id && user.role !== 'admin')) {
       return NextResponse.json({ error: 'Diagnosis not found' }, { status: 404 });
     }
 
