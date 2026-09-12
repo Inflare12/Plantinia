@@ -14,12 +14,16 @@ export async function createStripeCheckoutSession(params: {
   const plan = getPlan(params.tier);
   const displayName = params.planName || plan.name;
 
+  // Mock checkout is allowed only outside production. Production must use Stripe.
   if (!secretKey || secretKey === 'sk_test_sample') {
-    // Return simulated session URL for sandbox testing
+    if (env.NODE_ENV === 'production') {
+      throw new Error('Stripe is not configured for production');
+    }
     const sep = params.successUrl.includes('?') ? '&' : '?';
+    const sessionId = `mock_cs_${params.tier}_${Date.now()}`;
     return {
-      url: `${params.successUrl}${sep}session_id=mock_cs_${params.tier}_${Date.now()}`,
-      sessionId: `mock_cs_${params.tier}_${Date.now()}`,
+      url: `${params.successUrl}${sep}session_id=${sessionId}`,
+      sessionId,
     };
   }
 
@@ -29,9 +33,14 @@ export async function createStripeCheckoutSession(params: {
   formData.append('client_reference_id', params.userId);
   formData.append('success_url', params.successUrl);
   formData.append('cancel_url', params.cancelUrl);
+  formData.append('metadata[userId]', params.userId);
+  formData.append('metadata[tier]', plan.id);
+  formData.append('metadata[priceUSD]', plan.priceUSD.toString());
+  formData.append('subscription_data[metadata][userId]', params.userId);
+  formData.append('subscription_data[metadata][tier]', plan.id);
   formData.append('line_items[0][price_data][currency]', 'usd');
   formData.append('line_items[0][price_data][product_data][name]', `Plantinia ${displayName}`);
-  formData.append('line_items[0][price_data][unit_amount]', Math.round(params.amountUSD * 100).toString());
+  formData.append('line_items[0][price_data][unit_amount]', Math.round(plan.priceUSD * 100).toString());
   formData.append('line_items[0][price_data][recurring][interval]', 'month');
   formData.append('line_items[0][quantity]', '1');
 
@@ -50,9 +59,12 @@ export async function createStripeCheckoutSession(params: {
   }
 
   const data = await res.json();
+  if (!data.id || !data.url) {
+    throw new Error('Stripe returned an invalid checkout session');
+  }
+
   return {
     url: data.url,
     sessionId: data.id,
   };
 }
-
