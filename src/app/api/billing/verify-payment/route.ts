@@ -44,8 +44,6 @@ export async function POST(req: NextRequest) {
     const provider = body.provider === 'stripe' ? 'stripe' : 'razorpay';
     const tier = body.tier;
 
-    // Never trust a client-selected tier for granting access. The provider order/session
-    // must prove the exact plan and amount that was actually purchased.
     if (!isValidTier(tier)) {
       return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 });
     }
@@ -91,7 +89,7 @@ export async function POST(req: NextRequest) {
         const paid = session.payment_status === 'paid' || session.status === 'complete';
         const expectedAmount = Math.round(plan.priceUSD * 100);
         const actualAmount = session.amount_total;
-        if (!paid || session.mode !== 'subscription' || session.client_reference_id !== user.id || metadata.userId !== user.id || metadata.tier !== tier || (actualAmount != null && actualAmount !== expectedAmount)) {
+        if (!paid || session.mode !== 'subscription' || session.client_reference_id !== user.id || metadata.userId !== user.id || metadata.tier !== tier || actualAmount !== expectedAmount) {
           return NextResponse.json({ error: 'Stripe payment does not match the selected account or plan' }, { status: 400 });
         }
         subscriptionId = session.subscription || stripe_session_id;
@@ -100,14 +98,28 @@ export async function POST(req: NextRequest) {
       paymentRef = stripe_session_id;
     }
 
-    // Idempotency: never grant credits twice for the same provider payment reference.
-    const existingInvoices = await db.invoices.listByUser(user.id);
-    const alreadyProcessed = existingInvoices.some(
-      (invoice) => invoice.provider === provider && invoice.providerPaymentId === paymentRef
-    );
-    if (alreadyProcessed) {
-      const currentUser = await db.users.findById(user.id);
-      return NextResponse.json({ success: true, message: 'Payment was already processed.', user: currentUser });
+    const invoice = {
+      userId: user.id,
+      amount: provider === 'stripe' ? plan.priceUSD : plan.priceINR,
+      currency: provider === 'stripe' ? 'USD' : 'INR',
+      provider,
+      providerPaymentId: paymentRef,
+      status: 'paid' as const,
+      plan: plan.name,
+      receiptUrl: `#receipt-${paymentRef}`,
+    };
+
+    // Claim the provider payment before granting credits. The database unique constraint
+    // on (provider, providerPaymentId) makes repeated webhook/client callbacks idempotent.
+    try {
+      await db.invoices.create(invoice);
+    } catch (error: any) {
+      const message = String(error?.message || '').toLowerCase();
+      if (message.includes('unique') || message.includes('duplicate')) {
+        const currentUser = await db.users.findById(user.id);
+        return NextResponse.json({ success: true, message: 'Payment was already processed.', user: currentUser });
+      }
+      throw error;
     }
 
     const periodEnd = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
@@ -125,17 +137,6 @@ export async function POST(req: NextRequest) {
     });
 
     if (!updatedUser) return NextResponse.json({ error: 'User account could not be updated' }, { status: 500 });
-
-    await db.invoices.create({
-      userId: user.id,
-      amount: provider === 'stripe' ? plan.priceUSD : plan.priceINR,
-      currency: provider === 'stripe' ? 'USD' : 'INR',
-      provider,
-      providerPaymentId: paymentRef,
-      status: 'paid',
-      plan: plan.name,
-      receiptUrl: `#receipt-${paymentRef}`,
-    });
 
     return NextResponse.json({
       success: true,
