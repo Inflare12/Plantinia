@@ -4,42 +4,72 @@ import { db } from '../db/adapter';
 import { User } from '../db/schema';
 
 export async function hashPassword(password: string): Promise<string> {
+  if (password.length < 8) {
+    throw new Error('Password must be at least 8 characters');
+  }
+
   const enc = new TextEncoder();
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const salt = Array.from(saltBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
   const passKey = await crypto.subtle.importKey(
     'raw',
     enc.encode(password),
     { name: 'PBKDF2' },
     false,
-    ['deriveBits', 'deriveKey']
+    ['deriveBits']
   );
 
-  const salt = enc.encode('plantinia_secure_salt_2026');
   const derivedKey = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt,
-      iterations: 100000,
+      salt: saltBytes,
+      iterations: 310000,
       hash: 'SHA-256',
     },
     passKey,
     256
   );
 
-  const bytes = new Uint8Array(derivedKey);
-  return Array.from(bytes)
+  const hash = Array.from(new Uint8Array(derivedKey))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+  return `pbkdf2_sha256$310000$${salt}$${hash}`;
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  // Support plaintext demo passwords for ease of testing demo credentials
-  if (password === hash) return true;
-  const computedHash = await hashPassword(password);
-  return computedHash === hash;
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  try {
+    const parts = stored.split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+    const iterations = Number(parts[1]);
+    const saltHex = parts[2];
+    const expectedHex = parts[3];
+    if (!Number.isInteger(iterations) || iterations < 100000) return false;
+
+    const salt = new Uint8Array(saltHex.match(/.{2}/g)?.map((h) => parseInt(h, 16)) || []);
+    if (salt.length < 16 || expectedHex.length !== 64) return false;
+
+    const enc = new TextEncoder();
+    const passKey = await crypto.subtle.importKey(
+      'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+    );
+    const derived = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      passKey,
+      256
+    );
+    const actual = new Uint8Array(derived);
+    const expected = new Uint8Array(expectedHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+    if (actual.length !== expected.length) return false;
+
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+    return diff === 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function getSessionUser(req: NextRequest): Promise<User | null> {
-  // 1. Check Bearer token in Authorization header (Mobile/API clients)
   const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
   let token: string | null = null;
 
@@ -47,15 +77,11 @@ export async function getSessionUser(req: NextRequest): Promise<User | null> {
     token = authHeader.substring(7).trim();
   }
 
-  // 2. Check Cookie (Web Browser clients)
   if (!token) {
     const cookie = req.cookies.get('plantinia_token');
-    if (cookie) {
-      token = cookie.value;
-    }
+    if (cookie) token = cookie.value;
   }
 
-  // 3. Check X-API-Key (Developers / Farm integrations)
   const apiKey = req.headers.get('x-api-key');
   if (apiKey) {
     const allUsers = await db.users.listAll();
@@ -63,14 +89,10 @@ export async function getSessionUser(req: NextRequest): Promise<User | null> {
     if (matched) return matched;
   }
 
-  if (!token) {
-    return null;
-  }
+  if (!token) return null;
 
   const payload: JWTPayload | null = await verifyJWT(token);
-  if (!payload || !payload.userId) {
-    return null;
-  }
+  if (!payload || !payload.userId) return null;
 
   return await db.users.findById(payload.userId);
 }
