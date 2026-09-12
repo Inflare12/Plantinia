@@ -1,4 +1,4 @@
-export type SubscriptionTier = 'free' | 'pro' | 'farm';
+export type SubscriptionTier = 'free' | 'care' | 'doctor' | 'pro' | 'farm';
 
 export interface PlanPricing {
   id: SubscriptionTier;
@@ -6,13 +6,24 @@ export interface PlanPricing {
   badge?: string;
   priceINR: number;
   priceUSD: number;
-  period: 'month' | 'year';
+  period: 'month' | 'forever';
   description: string;
+  ctaText: string;
   creditsPerMonth: number | 'unlimited';
+  videoCreditsPerMonth: number | 'unlimited';
+  maxTrackedPlants: number | 'unlimited';
   features: string[];
   razorpayPlanId?: string;
   stripePriceId?: string;
 }
+
+export const SUBSCRIPTION_TIER_ORDER: SubscriptionTier[] = [
+  'free',
+  'care',
+  'doctor',
+  'pro',
+  'farm',
+];
 
 export const SUBSCRIPTION_PLANS: Record<SubscriptionTier, PlanPricing> = {
   free: {
@@ -20,15 +31,63 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionTier, PlanPricing> = {
     name: 'Starter Gardener',
     priceINR: 0,
     priceUSD: 0,
-    period: 'month',
-    description: 'Essential AI diagnosis for home plant lovers.',
+    period: 'forever',
+    description: 'Essential diagnosis for houseplant hobbyists.',
+    ctaText: 'Get Started Free',
     creditsPerMonth: 5,
+    videoCreditsPerMonth: 0,
+    maxTrackedPlants: 4,
     features: [
-      '5 AI plant disease scans / month',
-      'Basic treatment protocols & home recipes',
-      'Track up to 4 garden plants',
-      'Access to public disease library',
-      'Basic watering schedule reminders',
+      '5 AI leaf scans every month',
+      'Basic organic & home recipes',
+      'Track up to 4 plants',
+      'Plant disease encyclopedia',
+    ],
+  },
+  care: {
+    id: 'care',
+    name: 'Plant Care',
+    badge: 'Affordable Care',
+    priceINR: 49,
+    priceUSD: 0.99,
+    period: 'month',
+    description: 'Everyday AI-powered care for growing plant collections.',
+    ctaText: 'Start Plant Care',
+    creditsPerMonth: 20,
+    videoCreditsPerMonth: 0,
+    maxTrackedPlants: 10,
+    features: [
+      '20 AI leaf scans every month',
+      'Basic disease & pest identification',
+      'Basic AI plant-care chat',
+      'Track up to 10 plants',
+      'Organic & home remedies',
+      'Plant disease encyclopedia',
+      'Basic weather-aware recommendations',
+    ],
+  },
+  doctor: {
+    id: 'doctor',
+    name: 'Plant Doctor',
+    badge: 'Best Value',
+    priceINR: 139,
+    priceUSD: 1.99,
+    period: 'month',
+    description: 'Advanced diagnosis and care for serious plant enthusiasts.',
+    ctaText: 'Become a Plant Doctor',
+    creditsPerMonth: 60,
+    videoCreditsPerMonth: 10,
+    maxTrackedPlants: 30,
+    features: [
+      '60 AI leaf scans every month',
+      '10 AI video scans every month',
+      'Advanced Dr. Flora AI Doctor chat',
+      'Track up to 30 plants',
+      'Detailed AI diagnosis reports',
+      'Weather & microclimate insights',
+      'Care plans and reminders',
+      'Plant disease & pest encyclopedia',
+      'Printable PDF health reports',
     ],
   },
   pro: {
@@ -38,35 +97,44 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionTier, PlanPricing> = {
     priceINR: 399,
     priceUSD: 4.99,
     period: 'month',
-    description: 'Comprehensive health monitoring & 24/7 AI agronomist doctor.',
+    description: 'Unlimited AI diagnoses and 24/7 doctor chat.',
+    ctaText: 'Upgrade to Pro',
     creditsPerMonth: 'unlimited',
+    videoCreditsPerMonth: 'unlimited',
+    maxTrackedPlants: 'unlimited',
     features: [
-      'Unlimited AI image & video diagnoses',
-      '24/7 Dr. Flora AI Doctor interactive chat',
-      'Track unlimited indoor & outdoor plants',
-      'Complete "What to Buy & Make" chemical & organic schedules',
-      'Microclimate weather alerts & frost warnings',
-      'Printable nursery health reports (PDF)',
-      'Priority inference speed (<1.5s)',
+      'Unlimited AI leaf & video scans',
+      '24/7 Dr. Flora AI Doctor chat',
+      'Unlimited plant collection tracking',
+      'Microclimate weather & frost warnings',
+      'Export printable health reports (PDF)',
     ],
   },
   farm: {
     id: 'farm',
-    name: 'Commercial & Nursery',
-    badge: 'Enterprise',
+    name: 'Commercial Nursery',
+    badge: 'Commercial',
     priceINR: 1999,
     priceUSD: 24.99,
     period: 'month',
-    description: 'For greenhouse managers, agronomists, and commercial nurseries.',
+    description: 'For greenhouses, nurseries, and agronomists.',
+    ctaText: 'Choose Commercial',
     creditsPerMonth: 'unlimited',
+    videoCreditsPerMonth: 'unlimited',
+    maxTrackedPlants: 'unlimited',
     features: [
-      'All Pro Plan features included',
-      'Multi-acre plot and nursery batch scanning',
-      'REST API Access Keys for automated scanning',
-      'Dataset curation & custom model training center',
-      'Download annotated COCO / YOLO datasets',
-      'Dedicated agronomist support escalation',
-      'Team multi-seat collaboration',
+      'Everything in Pro included',
+      'REST API Access Keys for sensors',
+      'Multi-acre batch scanning & plots',
+      'Download annotated COCO / YOLO data',
     ],
   },
 };
+
+export function getPlan(tier: string | undefined): PlanPricing {
+  if (!tier || !(tier in SUBSCRIPTION_PLANS)) {
+    return SUBSCRIPTION_PLANS.free;
+  }
+  return SUBSCRIPTION_PLANS[tier as SubscriptionTier];
+}
+

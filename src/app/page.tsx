@@ -22,6 +22,7 @@ import {
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { BoundingBoxOverlay } from '@/components/diagnosis/BoundingBoxOverlay';
+import { SUBSCRIPTION_PLANS, SUBSCRIPTION_TIER_ORDER } from '@/lib/payments/types';
 
 export default function LandingPage() {
   const [demoSelected, setDemoSelected] = useState<'blight' | 'rose' | 'monstera'>('blight');
@@ -312,82 +313,74 @@ export default function LandingPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-stretch">
-              {/* Free */}
-              <div className="p-7 rounded-3xl bg-white dark:bg-[#111815] border border-slate-200 dark:border-[#223129] flex flex-col justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Starter Gardener</h3>
-                  <p className="text-xs text-slate-500 mt-1">Essential diagnosis for houseplant hobbyists.</p>
-                  <div className="my-6">
-                    <span className="text-4xl font-black text-slate-900 dark:text-white">₹0</span>
-                    <span className="text-xs text-slate-400"> / forever</span>
-                  </div>
-                  <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> 5 AI leaf scans every month</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Basic organic & home recipes</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Track up to 4 plants</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Plant disease encyclopedia</li>
-                  </ul>
-                </div>
-                <Link
-                  href="/signup"
-                  className="mt-8 block w-full py-3 text-center rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs text-slate-900 dark:text-white transition-colors"
-                >
-                  Get Started Free
-                </Link>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 items-stretch">
+              {SUBSCRIPTION_TIER_ORDER.map((tierId) => {
+                const plan = SUBSCRIPTION_PLANS[tierId];
+                const isPro = plan.id === 'pro';
 
-              {/* Pro */}
-              <div className="p-7 rounded-3xl bg-gradient-to-b from-emerald-950 via-[#0e1713] to-[#0c120f] text-white border-2 border-emerald-500 shadow-2xl flex flex-col justify-between relative">
-                <span className="absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wider shadow-md">
-                  Most Popular
-                </span>
-                <div>
-                  <h3 className="text-lg font-bold">Pro Plant Doctor</h3>
-                  <p className="text-xs text-emerald-200/80 mt-1">Unlimited AI diagnoses and 24/7 doctor chat.</p>
-                  <div className="my-6">
-                    <span className="text-4xl font-black">₹399</span>
-                    <span className="text-xs text-emerald-300/80"> / month ($4.99 USD)</span>
+                return (
+                  <div
+                    key={plan.id}
+                    className={`p-6 rounded-3xl flex flex-col justify-between relative transition-all ${
+                      isPro
+                        ? 'bg-gradient-to-b from-emerald-950 via-[#0e1713] to-[#0c120f] text-white border-2 border-emerald-500 shadow-2xl scale-[1.02]'
+                        : 'bg-white dark:bg-[#111815] border border-slate-200 dark:border-[#223129] text-slate-900 dark:text-white'
+                    }`}
+                  >
+                    {plan.badge && (
+                      <span className={`absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider shadow-md ${
+                        isPro
+                          ? 'bg-emerald-500 text-slate-950'
+                          : plan.id === 'doctor'
+                          ? 'bg-emerald-700 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                      }`}>
+                        {plan.badge}
+                      </span>
+                    )}
+                    <div>
+                      <h3 className="text-base font-bold">{plan.name}</h3>
+                      <p className={`text-xs mt-1 ${isPro ? 'text-emerald-200/80' : 'text-slate-500'}`}>
+                        {plan.description}
+                      </p>
+                      <div className="my-5">
+                        <span className="text-3xl font-black">
+                          {plan.priceINR === 0 ? '₹0' : `₹${plan.priceINR}`}
+                        </span>
+                        <span className={`text-[11px] ${isPro ? 'text-emerald-300/80' : 'text-slate-400'}`}>
+                          {plan.priceINR === 0 ? ' / forever' : ` / mo ($${plan.priceUSD})`}
+                        </span>
+                      </div>
+                      <ul className="space-y-2 text-xs">
+                        {plan.features.map((feat, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5">
+                            <CheckCircle2
+                              className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+                                isPro ? 'text-emerald-400' : 'text-emerald-500'
+                              }`}
+                            />
+                            <span className={isPro ? 'text-slate-200' : 'text-slate-600 dark:text-slate-300'}>
+                              {feat}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <Link
+                      href={plan.id === 'free' ? '/signup' : `/signup?tier=${plan.id}`}
+                      className={`mt-6 block w-full py-2.5 text-center rounded-xl font-bold text-xs transition-all active:scale-95 ${
+                        isPro
+                          ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/30'
+                          : plan.id === 'doctor'
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
+                      }`}
+                    >
+                      {plan.ctaText}
+                    </Link>
                   </div>
-                  <ul className="space-y-2.5 text-xs text-slate-200">
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Unlimited AI leaf & video scans</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> 24/7 Dr. Flora AI Doctor chat</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Unlimited plant collection tracking</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Microclimate weather & frost warnings</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400" /> Export printable health reports (PDF)</li>
-                  </ul>
-                </div>
-                <Link
-                  href="/signup"
-                  className="mt-8 block w-full py-3 text-center rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/30 transition-all active:scale-95"
-                >
-                  Upgrade to Pro
-                </Link>
-              </div>
-
-              {/* Farm */}
-              <div className="p-7 rounded-3xl bg-white dark:bg-[#111815] border border-slate-200 dark:border-[#223129] flex flex-col justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Commercial Nursery</h3>
-                  <p className="text-xs text-slate-500 mt-1">For greenhouses, nurseries, and agronomists.</p>
-                  <div className="my-6">
-                    <span className="text-4xl font-black text-slate-900 dark:text-white">₹1,999</span>
-                    <span className="text-xs text-slate-400"> / month ($24.99 USD)</span>
-                  </div>
-                  <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Everything in Pro included</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> REST API Access Keys for sensors</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Multi-acre batch scanning & plots</li>
-                    <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Download annotated COCO / YOLO data</li>
-                  </ul>
-                </div>
-                <Link
-                  href="/signup"
-                  className="mt-8 block w-full py-3 text-center rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 font-bold text-xs transition-colors"
-                >
-                  Start Farm Plan
-                </Link>
-              </div>
+                );
+              })}
             </div>
           </div>
         </section>

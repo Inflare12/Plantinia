@@ -4,7 +4,7 @@ export interface JWTPayload {
   userId: string;
   email: string;
   role: 'user' | 'admin';
-  subscriptionTier: 'free' | 'pro' | 'farm';
+  subscriptionTier: 'free' | 'care' | 'doctor' | 'pro' | 'farm';
   iat?: number;
   exp?: number;
 }

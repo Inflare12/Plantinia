@@ -10,12 +10,13 @@ export interface User {
   verificationCode?: string;
   verificationCodeExpiresAt?: string;
   resetPasswordToken?: string;
-  subscriptionTier: 'free' | 'pro' | 'farm';
+  subscriptionTier: 'free' | 'care' | 'doctor' | 'pro' | 'farm';
   subscriptionStatus: 'active' | 'trialing' | 'canceled' | 'past_due';
   subscriptionCurrentPeriodEnd?: string;
   paymentProvider?: 'razorpay' | 'stripe' | null;
   subscriptionId?: string;
   creditsRemaining: number;
+  videoCreditsRemaining?: number;
   apiKey?: string;
   createdAt: string;
   updatedAt: string;

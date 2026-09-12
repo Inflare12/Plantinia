@@ -221,7 +221,11 @@ class ApiClient {
       return await this.request<{
         plans: any[];
         currentTier: string;
+        subscriptionStatus?: string;
+        subscriptionCurrentPeriodEnd?: string;
         creditsRemaining: number;
+        videoCreditsRemaining: number;
+        plantsCount: number;
         invoices: any[];
       }>('/api/billing/plans');
     },

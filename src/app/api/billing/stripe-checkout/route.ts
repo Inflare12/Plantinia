@@ -22,9 +22,10 @@ export async function POST(req: NextRequest) {
     const session = await createStripeCheckoutSession({
       userId: user.id,
       userEmail: user.email,
-      tier: plan.id as 'pro' | 'farm',
+      tier: plan.id,
+      planName: plan.name,
       amountUSD: plan.priceUSD,
-      successUrl: `${appUrl}/billing?status=success`,
+      successUrl: `${appUrl}/billing?status=success&tier=${plan.id}`,
       cancelUrl: `${appUrl}/billing?status=cancelled`,
     });
 

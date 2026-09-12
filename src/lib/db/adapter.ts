@@ -1,5 +1,15 @@
 import { prisma } from './prisma';
 import {
+  SEED_USERS,
+  SEED_PLANTS,
+  SEED_DIAGNOSES,
+  SEED_TIMELINE_EVENTS,
+  SEED_CARE_TASKS,
+  SEED_KNOWLEDGE_BASE,
+  SEED_MODEL_METADATA,
+  SEED_INVOICES,
+} from './seed-data';
+import {
   User,
   Plant,
   Diagnosis,
@@ -13,7 +23,8 @@ import {
 } from './schema';
 
 const roleToPrisma = (v: User['role']) => v.toUpperCase() as 'USER' | 'ADMIN';
-const tierToPrisma = (v: User['subscriptionTier']) => v.toUpperCase() as 'FREE' | 'PRO' | 'FARM';
+const tierToPrisma = (v: User['subscriptionTier']) =>
+  v.toUpperCase() as 'FREE' | 'CARE' | 'DOCTOR' | 'PRO' | 'FARM';
 const statusToPrisma = (v: User['subscriptionStatus']) =>
   v.toUpperCase() as 'ACTIVE' | 'TRIALING' | 'CANCELED' | 'PAST_DUE';
 const healthToPrisma = (v: Plant['healthStatus']) =>
@@ -58,6 +69,7 @@ function mapUser(u: any): User {
     paymentProvider: u.paymentProvider ?? null,
     subscriptionId: u.subscriptionId ?? undefined,
     creditsRemaining: u.creditsRemaining,
+    videoCreditsRemaining: u.videoCreditsRemaining ?? undefined,
     apiKey: u.apiKey ?? undefined,
     createdAt: u.createdAt.toISOString(),
     updatedAt: u.updatedAt.toISOString(),
@@ -226,89 +238,170 @@ function mapInvoice(i: any): Invoice {
   };
 }
 
+const globalForStore = globalThis as unknown as {
+  inMemoryStore: {
+    users: User[];
+    plants: Plant[];
+    diagnoses: Diagnosis[];
+    timeline: PlantTimelineEvent[];
+    careTasks: CarePlanTask[];
+    chatMessages: ChatMessage[];
+    knowledge: KnowledgeItem[];
+    modelMetadata: ModelMetadata[];
+    userFeedback: UserFeedback[];
+    invoices: Invoice[];
+  } | undefined;
+};
+
+const store = globalForStore.inMemoryStore ?? {
+  users: [...SEED_USERS],
+  plants: [...SEED_PLANTS],
+  diagnoses: [...SEED_DIAGNOSES],
+  timeline: [...SEED_TIMELINE_EVENTS],
+  careTasks: [...SEED_CARE_TASKS],
+  chatMessages: [],
+  knowledge: [...SEED_KNOWLEDGE_BASE],
+  modelMetadata: [...SEED_MODEL_METADATA],
+  userFeedback: [],
+  invoices: [...SEED_INVOICES],
+};
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForStore.inMemoryStore = store;
+}
+
+const isPostgres = () => {
+  const url = process.env.DATABASE_URL;
+  return typeof url === 'string' && (url.startsWith('postgres://') || url.startsWith('postgresql://'));
+};
+
 export const db = {
   users: {
     async findById(id: string): Promise<User | null> {
-      const user = await prisma.user.findUnique({ where: { id } });
-      return user ? mapUser(user) : null;
+      if (isPostgres()) {
+        try {
+          const user = await prisma.user.findUnique({ where: { id } });
+          if (user) return mapUser(user);
+        } catch {}
+      }
+      return store.users.find((u) => u.id === id) ?? null;
     },
 
     async findByEmail(email: string): Promise<User | null> {
-      const user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase().trim() },
-      });
-      return user ? mapUser(user) : null;
+      if (isPostgres()) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: email.toLowerCase().trim() },
+          });
+          if (user) return mapUser(user);
+        } catch {}
+      }
+      return store.users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim()) ?? null;
     },
 
     async create(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
-      const created = await prisma.user.create({
-        data: {
-          email: user.email.toLowerCase().trim(),
-          passwordHash: user.passwordHash,
-          name: user.name,
-          avatarUrl: user.avatarUrl,
-          role: roleToPrisma(user.role),
-          isEmailVerified: user.isEmailVerified,
-          verificationToken: user.verificationToken,
-          verificationCode: user.verificationCode,
-          verificationCodeExpiresAt: user.verificationCodeExpiresAt ? new Date(user.verificationCodeExpiresAt) : undefined,
-          resetPasswordToken: user.resetPasswordToken,
-          subscriptionTier: tierToPrisma(user.subscriptionTier),
-          subscriptionStatus: statusToPrisma(user.subscriptionStatus),
-          subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd
-            ? new Date(user.subscriptionCurrentPeriodEnd)
-            : undefined,
-          paymentProvider: user.paymentProvider ?? undefined,
-          subscriptionId: user.subscriptionId,
-          creditsRemaining: user.creditsRemaining,
-          apiKey: user.apiKey,
-        },
-      });
+      if (isPostgres()) {
+        try {
+          const created = await prisma.user.create({
+            data: {
+              email: user.email.toLowerCase().trim(),
+              passwordHash: user.passwordHash,
+              name: user.name,
+              avatarUrl: user.avatarUrl,
+              role: roleToPrisma(user.role),
+              isEmailVerified: user.isEmailVerified,
+              verificationToken: user.verificationToken,
+              verificationCode: user.verificationCode,
+              verificationCodeExpiresAt: user.verificationCodeExpiresAt ? new Date(user.verificationCodeExpiresAt) : undefined,
+              resetPasswordToken: user.resetPasswordToken,
+              subscriptionTier: tierToPrisma(user.subscriptionTier),
+              subscriptionStatus: statusToPrisma(user.subscriptionStatus),
+              subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd
+                ? new Date(user.subscriptionCurrentPeriodEnd)
+                : undefined,
+              paymentProvider: user.paymentProvider ?? undefined,
+              subscriptionId: user.subscriptionId,
+              creditsRemaining: user.creditsRemaining,
+              apiKey: user.apiKey,
+            },
+          });
+          const mapped = mapUser(created);
+          store.users.push(mapped);
+          return mapped;
+        } catch {}
+      }
 
-      return mapUser(created);
+      const now = new Date().toISOString();
+      const newUser: User = {
+        id: `user_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        updatedAt: now,
+        ...user,
+      };
+      store.users.push(newUser);
+      return newUser;
     },
 
     async update(id: string, updates: Partial<User>): Promise<User | null> {
-      const data: any = {};
+      if (isPostgres()) {
+        const data: any = {};
 
-      if (updates.email !== undefined) data.email = updates.email.toLowerCase().trim();
-      if (updates.passwordHash !== undefined) data.passwordHash = updates.passwordHash;
-      if (updates.name !== undefined) data.name = updates.name;
-      if (updates.avatarUrl !== undefined) data.avatarUrl = updates.avatarUrl;
-      if (updates.role !== undefined) data.role = roleToPrisma(updates.role);
-      if (updates.isEmailVerified !== undefined) data.isEmailVerified = updates.isEmailVerified;
-      if (updates.verificationToken !== undefined) data.verificationToken = updates.verificationToken;
-      if (updates.verificationCode !== undefined) data.verificationCode = updates.verificationCode;
-      if (updates.verificationCodeExpiresAt !== undefined) data.verificationCodeExpiresAt = updates.verificationCodeExpiresAt ? new Date(updates.verificationCodeExpiresAt) : null;
-      if (updates.resetPasswordToken !== undefined) data.resetPasswordToken = updates.resetPasswordToken;
-      if (updates.subscriptionTier !== undefined) data.subscriptionTier = tierToPrisma(updates.subscriptionTier);
-      if (updates.subscriptionStatus !== undefined) data.subscriptionStatus = statusToPrisma(updates.subscriptionStatus);
-      if (updates.subscriptionCurrentPeriodEnd !== undefined) {
-        data.subscriptionCurrentPeriodEnd = updates.subscriptionCurrentPeriodEnd
-          ? new Date(updates.subscriptionCurrentPeriodEnd)
-          : null;
-      }
-      if (updates.paymentProvider !== undefined) data.paymentProvider = updates.paymentProvider;
-      if (updates.subscriptionId !== undefined) data.subscriptionId = updates.subscriptionId;
-      if (updates.creditsRemaining !== undefined) data.creditsRemaining = updates.creditsRemaining;
-      if (updates.apiKey !== undefined) data.apiKey = updates.apiKey;
+        if (updates.email !== undefined) data.email = updates.email.toLowerCase().trim();
+        if (updates.passwordHash !== undefined) data.passwordHash = updates.passwordHash;
+        if (updates.name !== undefined) data.name = updates.name;
+        if (updates.avatarUrl !== undefined) data.avatarUrl = updates.avatarUrl;
+        if (updates.role !== undefined) data.role = roleToPrisma(updates.role);
+        if (updates.isEmailVerified !== undefined) data.isEmailVerified = updates.isEmailVerified;
+        if (updates.verificationToken !== undefined) data.verificationToken = updates.verificationToken;
+        if (updates.verificationCode !== undefined) data.verificationCode = updates.verificationCode;
+        if (updates.verificationCodeExpiresAt !== undefined) data.verificationCodeExpiresAt = updates.verificationCodeExpiresAt ? new Date(updates.verificationCodeExpiresAt) : null;
+        if (updates.resetPasswordToken !== undefined) data.resetPasswordToken = updates.resetPasswordToken;
+        if (updates.subscriptionTier !== undefined) data.subscriptionTier = tierToPrisma(updates.subscriptionTier);
+        if (updates.subscriptionStatus !== undefined) data.subscriptionStatus = statusToPrisma(updates.subscriptionStatus);
+        if (updates.subscriptionCurrentPeriodEnd !== undefined) {
+          data.subscriptionCurrentPeriodEnd = updates.subscriptionCurrentPeriodEnd
+            ? new Date(updates.subscriptionCurrentPeriodEnd)
+            : null;
+        }
+        if (updates.paymentProvider !== undefined) data.paymentProvider = updates.paymentProvider;
+        if (updates.subscriptionId !== undefined) data.subscriptionId = updates.subscriptionId;
+        if (updates.creditsRemaining !== undefined) data.creditsRemaining = updates.creditsRemaining;
+        if (updates.apiKey !== undefined) data.apiKey = updates.apiKey;
 
-      try {
-        const updated = await prisma.user.update({
-          where: { id },
-          data,
-        });
-        return mapUser(updated);
-      } catch {
-        return null;
+        try {
+          const updated = await prisma.user.update({
+            where: { id },
+            data,
+          });
+          const mapped = mapUser(updated);
+          const inMemIdx = store.users.findIndex((u) => u.id === id);
+          if (inMemIdx !== -1) {
+            store.users[inMemIdx] = { ...store.users[inMemIdx], ...updates, updatedAt: new Date().toISOString() };
+          }
+          return mapped;
+        } catch {}
       }
+
+      const inMemIdx = store.users.findIndex((u) => u.id === id);
+      if (inMemIdx === -1) return null;
+      store.users[inMemIdx] = {
+        ...store.users[inMemIdx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      return { ...store.users[inMemIdx] };
     },
 
     async listAll(): Promise<User[]> {
-      const users = await prisma.user.findMany({
-        orderBy: { createdAt: 'desc' },
-      });
-      return users.map(mapUser);
+      if (isPostgres()) {
+        try {
+          const users = await prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
+          });
+          return users.map(mapUser);
+        } catch {}
+      }
+      return [...store.users];
     },
   },
 
@@ -597,101 +690,180 @@ export const db = {
 
   knowledge: {
     async listAll(): Promise<KnowledgeItem[]> {
-      const items = await prisma.knowledgeItem.findMany({
-        where: { isActive: true },
-        orderBy: { lastUpdated: 'desc' },
-      });
-      return items.map(mapKnowledgeItem);
+      if (isPostgres()) {
+        try {
+          const items = await prisma.knowledgeItem.findMany({
+            where: { isActive: true },
+            orderBy: { lastUpdated: 'desc' },
+          });
+          if (items?.length) return items.map(mapKnowledgeItem);
+        } catch {}
+      }
+      return store.knowledge.filter((k) => k.isActive);
     },
 
     async getByScientificName(scientificName: string): Promise<KnowledgeItem | null> {
-      const item = await prisma.knowledgeItem.findUnique({ 
-        where: { scientificName, isActive: true } 
-      });
-      return item ? mapKnowledgeItem(item) : null;
+      if (isPostgres()) {
+        try {
+          const item = await prisma.knowledgeItem.findUnique({ 
+            where: { scientificName, isActive: true } 
+          });
+          if (item) return mapKnowledgeItem(item);
+        } catch {}
+      }
+      return store.knowledge.find(
+        (k) =>
+          k.scientificName?.toLowerCase() === scientificName.toLowerCase() &&
+          k.isActive
+      ) ?? null;
     },
 
     async search(query: string, type?: string): Promise<KnowledgeItem[]> {
       const q = query.toLowerCase();
       
-      const whereClause: any = { isActive: true };
-      if (type) whereClause.type = type;
+      if (isPostgres()) {
+        try {
+          const whereClause: any = { isActive: true };
+          if (type) whereClause.type = type;
 
-      const items = await prisma.knowledgeItem.findMany({
-        where: whereClause,
-      });
+          const items = await prisma.knowledgeItem.findMany({
+            where: whereClause,
+          });
 
-      return items
-        .map(mapKnowledgeItem)
-        .filter(
-          (k) =>
-            k.name.toLowerCase().includes(q) ||
-            (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
-            (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
-            (k.description && k.description.toLowerCase().includes(q))
+          if (items?.length) {
+            return (items.map(mapKnowledgeItem) as KnowledgeItem[]).filter(
+              (k: KnowledgeItem) =>
+                k.name.toLowerCase().includes(q) ||
+                (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
+                (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
+                (k.description && k.description.toLowerCase().includes(q))
+            );
+          }
+        } catch {}
+      }
+
+      return store.knowledge.filter((k) => {
+        if (!k.isActive) return false;
+        if (type && k.type !== type) return false;
+        return (
+          k.name.toLowerCase().includes(q) ||
+          (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
+          (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
+          (k.description && k.description.toLowerCase().includes(q))
         );
+      });
     },
   },
 
   modelMetadata: {
     async listAll(): Promise<ModelMetadata[]> {
-      const models = await prisma.modelMetadata.findMany({
-        orderBy: { registeredAt: 'desc' },
-      });
-      return models.map(mapModelMetadata);
+      if (isPostgres()) {
+        try {
+          const models = await prisma.modelMetadata.findMany({
+            orderBy: { registeredAt: 'desc' },
+          });
+          if (models?.length) return models.map(mapModelMetadata);
+        } catch {}
+      }
+      return [...store.modelMetadata];
     },
 
     async getActive(modelType: string): Promise<ModelMetadata | null> {
-      const model = await prisma.modelMetadata.findFirst({
-        where: { 
-          type: modelType as any,
-          isActive: true,
-          status: 'active' as any
-        },
-      });
-      return model ? mapModelMetadata(model) : null;
+      if (isPostgres()) {
+        try {
+          const model = await prisma.modelMetadata.findFirst({
+            where: { 
+              type: modelType as any,
+              isActive: true,
+              status: 'active' as any
+            },
+          });
+          if (model) return mapModelMetadata(model);
+        } catch {}
+      }
+      return (
+        store.modelMetadata.find(
+          (m) => m.type === modelType && m.isActive && m.status === 'active'
+        ) ?? null
+      );
     },
 
     async setActive(id: string): Promise<ModelMetadata | null> {
-      const target = await prisma.modelMetadata.findUnique({ where: { id } });
+      if (isPostgres()) {
+        try {
+          const target = await prisma.modelMetadata.findUnique({ where: { id } });
+          if (target) {
+            await prisma.$transaction([
+              prisma.modelMetadata.updateMany({
+                where: { type: target.type as any },
+                data: { isActive: false },
+              }),
+              prisma.modelMetadata.update({
+                where: { id },
+                data: { isActive: true, status: 'active' as any },
+              }),
+            ]);
+
+            const updated = await prisma.modelMetadata.findUnique({ where: { id } });
+            if (updated) return mapModelMetadata(updated);
+          }
+        } catch {}
+      }
+      const target = store.modelMetadata.find((m) => m.id === id);
       if (!target) return null;
-
-      await prisma.$transaction([
-        prisma.modelMetadata.updateMany({
-          where: { type: target.type as any },
-          data: { isActive: false },
-        }),
-        prisma.modelMetadata.update({
-          where: { id },
-          data: { isActive: true, status: 'active' as any },
-        }),
-      ]);
-
-      const updated = await prisma.modelMetadata.findUnique({ where: { id } });
-      return updated ? mapModelMetadata(updated) : null;
+      store.modelMetadata.forEach((m) => {
+        if (m.type === target.type) m.isActive = false;
+      });
+      target.isActive = true;
+      target.status = 'active';
+      return { ...target };
     },
 
     async create(model: Omit<ModelMetadata, 'id'>): Promise<ModelMetadata> {
-      const created = await prisma.modelMetadata.create({
-        data: {
-          name: model.name,
-          version: model.version,
-          type: model.type,
-          status: model.status,
-          description: model.description,
-          trainedOn: model.trainedOn,
-          accuracy: model.accuracy,
-          classes: model.classes as any,
-          inputSize: model.inputSize as any,
-          preprocessing: model.preprocessing as any,
-          license: model.license,
-          citation: model.citation,
-          isActive: model.isActive,
-          registeredAt: new Date(model.registeredAt),
-        },
-      });
+      if (isPostgres()) {
+        try {
+          const created = await prisma.modelMetadata.create({
+            data: {
+              name: model.name,
+              version: model.version,
+              type: model.type,
+              status: model.status,
+              description: model.description,
+              trainedOn: model.trainedOn,
+              accuracy: model.accuracy,
+              classes: model.classes as any,
+              inputSize: model.inputSize as any,
+              preprocessing: model.preprocessing as any,
+              license: model.license,
+              citation: model.citation,
+              isActive: model.isActive,
+              registeredAt: new Date(model.registeredAt),
+            },
+          });
+          return mapModelMetadata(created);
+        } catch {}
+      }
+      const newModel: ModelMetadata = {
+        ...model,
+        id: `mdl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      };
+      store.modelMetadata.push(newModel);
+      return newModel;
+    },
+  },
 
-      return mapModelMetadata(created);
+  models: {
+    listAll(): Promise<ModelMetadata[]> {
+      return db.modelMetadata.listAll();
+    },
+    getActive(modelType: string): Promise<ModelMetadata | null> {
+      return db.modelMetadata.getActive(modelType);
+    },
+    setActive(id: string): Promise<ModelMetadata | null> {
+      return db.modelMetadata.setActive(id);
+    },
+    create(model: Omit<ModelMetadata, 'id'>): Promise<ModelMetadata> {
+      return db.modelMetadata.create(model);
     },
   },
 

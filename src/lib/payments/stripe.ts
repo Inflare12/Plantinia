@@ -1,20 +1,25 @@
 import { env } from '../env';
+import { SubscriptionTier, getPlan } from './types';
 
 export async function createStripeCheckoutSession(params: {
   userId: string;
   userEmail: string;
-  tier: 'pro' | 'farm';
+  tier: SubscriptionTier;
   amountUSD: number;
+  planName?: string;
   successUrl: string;
   cancelUrl: string;
 }): Promise<{ url: string; sessionId: string }> {
   const secretKey = env.STRIPE_SECRET_KEY;
+  const plan = getPlan(params.tier);
+  const displayName = params.planName || plan.name;
 
   if (!secretKey || secretKey === 'sk_test_sample') {
-    // Return mock session URL for sandbox testing
+    // Return simulated session URL for sandbox testing
+    const sep = params.successUrl.includes('?') ? '&' : '?';
     return {
-      url: `${params.successUrl}?session_id=mock_cs_${Date.now()}`,
-      sessionId: `mock_cs_${Date.now()}`,
+      url: `${params.successUrl}${sep}session_id=mock_cs_${params.tier}_${Date.now()}`,
+      sessionId: `mock_cs_${params.tier}_${Date.now()}`,
     };
   }
 
@@ -25,7 +30,7 @@ export async function createStripeCheckoutSession(params: {
   formData.append('success_url', params.successUrl);
   formData.append('cancel_url', params.cancelUrl);
   formData.append('line_items[0][price_data][currency]', 'usd');
-  formData.append('line_items[0][price_data][product_data][name]', `Plantinia ${params.tier.toUpperCase()} Plan`);
+  formData.append('line_items[0][price_data][product_data][name]', `Plantinia ${displayName}`);
   formData.append('line_items[0][price_data][unit_amount]', Math.round(params.amountUSD * 100).toString());
   formData.append('line_items[0][price_data][recurring][interval]', 'month');
   formData.append('line_items[0][quantity]', '1');
@@ -50,3 +55,4 @@ export async function createStripeCheckoutSession(params: {
     sessionId: data.id,
   };
 }
+

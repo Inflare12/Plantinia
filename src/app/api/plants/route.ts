@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
 import { db } from '@/lib/db/adapter';
+import { checkPlantTrackingEntitlement } from '@/lib/payments/entitlements';
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,6 +22,12 @@ export async function POST(req: NextRequest) {
     const user = await getSessionUser(req);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Enforce server-side plant tracking quota
+    const quotaCheck = await checkPlantTrackingEntitlement(user);
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason }, { status: 403 });
     }
 
     const body = await req.json();

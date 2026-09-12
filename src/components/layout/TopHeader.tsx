@@ -86,6 +86,10 @@ export function TopHeader({ user, onToggleMobileMenu }: { user?: any; onToggleMo
             <span>
               {currentUser.subscriptionTier === 'pro' || currentUser.subscriptionTier === 'farm'
                 ? 'Unlimited AI'
+                : currentUser.subscriptionTier === 'doctor'
+                ? `${currentUser.creditsRemaining ?? 60} Scans • Doctor`
+                : currentUser.subscriptionTier === 'care'
+                ? `${currentUser.creditsRemaining ?? 20} Scans • Care`
                 : `${currentUser.creditsRemaining ?? 5} Scans Left`}
             </span>
           </Link>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
 import { getAIEngine } from '@/lib/ai';
 import { db } from '@/lib/db/adapter';
+import { canAccessChat } from '@/lib/payments/entitlements';
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const chatAccess = canAccessChat(user);
 
     const { messages, plantId } = await req.json();
     if (!messages || !Array.isArray(messages)) {
@@ -57,6 +60,7 @@ export async function POST(req: NextRequest) {
       response: chatResult.response,
       suggestedFollowUps: chatResult.suggestedFollowUps,
       aiProviderUsed: chatResult.aiProviderUsed,
+      chatMode: chatAccess.mode,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

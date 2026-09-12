@@ -18,6 +18,8 @@ export default function BillingPage() {
   const [plans, setPlans] = useState<any[]>([]);
   const [currentTier, setCurrentTier] = useState('free');
   const [creditsRemaining, setCreditsRemaining] = useState(5);
+  const [videoCreditsRemaining, setVideoCreditsRemaining] = useState(0);
+  const [plantsCount, setPlantsCount] = useState(0);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [upgradingTier, setUpgradingTier] = useState<string | null>(null);
@@ -25,6 +27,32 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadBillingData();
+
+    // Check for returning Stripe redirect
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const status = searchParams.get('status');
+      const tier = searchParams.get('tier');
+      const sessionId = searchParams.get('session_id');
+
+      if (status === 'success' && tier) {
+        apiClient.billing
+          .verifyRazorpayPayment({
+            provider: 'stripe',
+            stripe_session_id: sessionId || `cs_${Date.now()}`,
+            tier,
+          })
+          .then((res) => {
+            setMessage({ text: res.message || 'Payment confirmed via Stripe!', type: 'success' });
+            loadBillingData();
+          })
+          .catch((err) => {
+            console.error('Stripe verification error:', err);
+          });
+      } else if (status === 'cancelled') {
+        setMessage({ text: 'Checkout session was cancelled.', type: 'error' });
+      }
+    }
 
     // Dynamically load Razorpay SDK for seamless popup checkout
     if (typeof window !== 'undefined' && !document.getElementById('razorpay-sdk')) {
@@ -42,6 +70,8 @@ export default function BillingPage() {
       setPlans(res.plans || []);
       setCurrentTier(res.currentTier || 'free');
       setCreditsRemaining(res.creditsRemaining ?? 5);
+      setVideoCreditsRemaining(res.videoCreditsRemaining ?? 0);
+      setPlantsCount(res.plantsCount ?? 0);
       setInvoices(res.invoices || []);
     } catch (e) {
       console.error(e);
@@ -153,38 +183,60 @@ export default function BillingPage() {
       )}
 
       {/* Current Plan Overview Card */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#111815] border border-slate-200 dark:border-[#223129] shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
+      <div className="p-6 rounded-3xl bg-white dark:bg-[#111815] border border-slate-200 dark:border-[#223129] shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2">
           <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
             Current Subscription
           </span>
-          <div className="flex items-center gap-3 mt-1">
-            <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white uppercase">
-              {currentTier} Plan
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white capitalize">
+              {plans.find((p) => p.id === currentTier)?.name || `${currentTier} Plan`}
             </h2>
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
               Active
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {currentTier === 'free'
-              ? `${creditsRemaining} free AI diagnoses remaining this calendar month.`
-              : 'Unlimited AI leaf & video scans and 24/7 agronomist chat activated.'}
-          </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-2 text-xs text-slate-600 dark:text-slate-300">
+            <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+              <span className="text-slate-400 font-medium">Leaf Scans: </span>
+              <strong className="text-emerald-600 dark:text-emerald-400 font-bold">
+                {currentTier === 'pro' || currentTier === 'farm'
+                  ? 'Unlimited'
+                  : `${creditsRemaining} remaining`}
+              </strong>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+              <span className="text-slate-400 font-medium">Video Scans: </span>
+              <strong className="text-emerald-600 dark:text-emerald-400 font-bold">
+                {currentTier === 'pro' || currentTier === 'farm'
+                  ? 'Unlimited'
+                  : currentTier === 'doctor'
+                  ? `${videoCreditsRemaining} remaining`
+                  : 'Upgrade to Doctor'}
+              </strong>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+              <span className="text-slate-400 font-medium">My Plants: </span>
+              <strong className="text-slate-900 dark:text-white font-bold">
+                {plantsCount} {currentTier === 'free' ? '/ 4 max' : currentTier === 'care' ? '/ 15 max' : 'tracked'}
+              </strong>
+            </div>
+          </div>
         </div>
 
         {currentTier === 'free' && (
           <button
-            onClick={() => handleRazorpayUpgrade('pro')}
-            className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95"
+            onClick={() => handleRazorpayUpgrade('doctor')}
+            className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95 shrink-0"
           >
-            Upgrade to Pro (₹399/mo)
+            Upgrade to Plant Doctor (₹139/mo)
           </button>
         )}
       </div>
 
-      {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Pricing Cards Grid (All 5 Tiers) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
         {plans.map((plan) => {
           const isCurrent = currentTier === plan.id;
           const isPro = plan.id === 'pro';
@@ -192,38 +244,44 @@ export default function BillingPage() {
           return (
             <div
               key={plan.id}
-              className={`rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all relative ${
+              className={`rounded-3xl p-6 flex flex-col justify-between transition-all relative ${
                 isPro
                   ? 'bg-gradient-to-b from-emerald-950 via-[#0e1713] to-[#0c120f] text-white border-2 border-emerald-500 shadow-xl'
                   : 'bg-white dark:bg-[#111815] border border-slate-200 dark:border-[#223129] text-slate-900 dark:text-white'
               }`}
             >
               {plan.badge && (
-                <span className="absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wider shadow-md">
+                <span className={`absolute -top-3 left-1/2 transform -translate-x-1/2 px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider shadow-md ${
+                  isPro
+                    ? 'bg-emerald-500 text-slate-950'
+                    : plan.id === 'doctor'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                }`}>
                   {plan.badge}
                 </span>
               )}
 
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-bold">{plan.name}</h3>
-                  <p className="text-xs text-slate-400 mt-1">{plan.description}</p>
+                  <h3 className="text-base font-bold">{plan.name}</h3>
+                  <p className="text-xs text-slate-400 mt-1 min-h-[32px]">{plan.description}</p>
                 </div>
 
-                <div className="flex items-baseline gap-1 pt-2">
-                  <span className="text-3xl font-extrabold">
+                <div className="flex items-baseline gap-1 pt-1">
+                  <span className="text-2xl sm:text-3xl font-extrabold">
                     {plan.priceINR === 0 ? 'Free' : `₹${plan.priceINR}`}
                   </span>
                   {plan.priceINR > 0 && (
-                    <span className="text-xs text-slate-400">/month (${plan.priceUSD} USD)</span>
+                    <span className="text-[11px] text-slate-400">/mo (${plan.priceUSD})</span>
                   )}
                 </div>
 
-                <ul className="space-y-2.5 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
+                <ul className="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                   {plan.features.map((feat: string, idx: number) => (
-                    <li key={idx} className="flex items-start gap-2">
+                    <li key={idx} className="flex items-start gap-1.5">
                       <CheckCircle2
-                        className={`w-4 h-4 mt-0.5 shrink-0 ${
+                        className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
                           isPro ? 'text-emerald-400' : 'text-emerald-600'
                         }`}
                       />
@@ -241,7 +299,7 @@ export default function BillingPage() {
                     disabled
                     className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 text-xs font-bold cursor-default"
                   >
-                    Current Plan
+                    Current Active Plan
                   </button>
                 ) : (
                   <>
@@ -258,7 +316,7 @@ export default function BillingPage() {
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <>
-                          <span>Pay with UPI / Razorpay (₹{plan.priceINR})</span>
+                          <span>Pay with UPI (₹{plan.priceINR})</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </>
                       )}
@@ -267,9 +325,9 @@ export default function BillingPage() {
                     {plan.priceUSD > 0 && (
                       <button
                         onClick={() => handleStripeUpgrade(plan.id)}
-                        className="w-full py-2 text-center text-[11px] font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                        className="w-full py-1.5 text-center text-[11px] font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                       >
-                        or pay with Stripe (${plan.priceUSD} USD)
+                        or pay with Stripe (${plan.priceUSD})
                       </button>
                     )}
                   </>

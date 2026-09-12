@@ -215,6 +215,8 @@ enum Role {
 
 enum SubscriptionTier {
   FREE
+  CARE
+  DOCTOR
   PRO
   FARM
 }
