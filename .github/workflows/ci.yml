@@ -1,0 +1,44 @@
+name: Plantinia CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: plantinia-ci-secret-change-me-32-characters-long
+      DATABASE_URL: file:./dev.db
+      AI_PROVIDER: mock
+      EMAIL_PROVIDER: mock
+      STORAGE_PROVIDER: local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run tests
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        env:
+          NODE_ENV: development
+        run: npm run build
