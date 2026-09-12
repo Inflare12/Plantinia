@@ -1,5 +1,6 @@
--- Plantinia PostgreSQL Production DDL
--- Compatible with Neon, Supabase, Vercel Postgres, AWS RDS
+-- Plantinia PostgreSQL production DDL / compatibility bootstrap
+-- Prisma schema is the canonical application schema. This file is kept for
+-- environments that bootstrap PostgreSQL without running Prisma migrations.
 
 CREATE TABLE IF NOT EXISTS "User" (
   "id" TEXT PRIMARY KEY,
@@ -10,6 +11,8 @@ CREATE TABLE IF NOT EXISTS "User" (
   "role" TEXT NOT NULL DEFAULT 'user',
   "isEmailVerified" BOOLEAN NOT NULL DEFAULT false,
   "verificationToken" TEXT,
+  "verificationCode" TEXT,
+  "verificationCodeExpiresAt" TIMESTAMP(3),
   "resetPasswordToken" TEXT,
   "subscriptionTier" TEXT NOT NULL DEFAULT 'free',
   "subscriptionStatus" TEXT NOT NULL DEFAULT 'active',
@@ -17,6 +20,7 @@ CREATE TABLE IF NOT EXISTS "User" (
   "paymentProvider" TEXT,
   "subscriptionId" TEXT,
   "creditsRemaining" INTEGER NOT NULL DEFAULT 5,
+  "videoCreditsRemaining" INTEGER NOT NULL DEFAULT 0,
   "apiKey" TEXT UNIQUE,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -51,6 +55,7 @@ CREATE TABLE IF NOT EXISTS "Diagnosis" (
   "pathogenType" TEXT NOT NULL DEFAULT 'none',
   "confidence" DOUBLE PRECISION NOT NULL,
   "severity" TEXT NOT NULL DEFAULT 'mild',
+  "uncertainty" TEXT DEFAULT 'low',
   "symptoms" JSONB NOT NULL,
   "causes" JSONB NOT NULL,
   "prognosis" TEXT NOT NULL,
@@ -60,6 +65,9 @@ CREATE TABLE IF NOT EXISTS "Diagnosis" (
   "preventativeMeasures" JSONB NOT NULL,
   "boundingBoxes" JSONB,
   "aiProviderUsed" TEXT NOT NULL,
+  "modelVersion" TEXT,
+  "candidates" JSONB,
+  "knowledgeReferences" JSONB,
   "adminReviewed" BOOLEAN NOT NULL DEFAULT false,
   "adminAccuracyFeedback" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -101,26 +109,21 @@ CREATE TABLE IF NOT EXISTS "ChatMessage" (
 
 CREATE TABLE IF NOT EXISTS "KnowledgeItem" (
   "id" TEXT PRIMARY KEY,
-  "title" TEXT NOT NULL,
-  "slug" TEXT UNIQUE NOT NULL,
-  "category" TEXT NOT NULL,
-  "affectedPlants" JSONB NOT NULL,
-  "symptoms" JSONB NOT NULL,
-  "treatment" TEXT NOT NULL,
-  "prevention" TEXT NOT NULL,
-  "imageUrl" TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS "ModelVersion" (
-  "id" TEXT PRIMARY KEY,
+  "type" TEXT NOT NULL,
   "name" TEXT NOT NULL,
-  "version" TEXT UNIQUE NOT NULL,
-  "provider" TEXT NOT NULL,
-  "status" TEXT NOT NULL DEFAULT 'staging',
-  "accuracy" DOUBLE PRECISION NOT NULL,
-  "datasetCount" INTEGER NOT NULL,
-  "lastTrainedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "endpointUrl" TEXT
+  "scientificName" TEXT UNIQUE,
+  "commonNames" JSONB,
+  "category" TEXT,
+  "description" TEXT,
+  "affectedPlants" JSONB,
+  "symptoms" JSONB,
+  "treatment" JSONB,
+  "prevention" JSONB,
+  "sources" JSONB,
+  "imageUrl" TEXT,
+  "metadata" JSONB,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "lastUpdated" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS "Invoice" (
@@ -136,10 +139,53 @@ CREATE TABLE IF NOT EXISTS "Invoice" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for performance
+CREATE UNIQUE INDEX IF NOT EXISTS "Invoice_provider_providerPaymentId_key"
+  ON "Invoice"("provider", "providerPaymentId");
+
+CREATE TABLE IF NOT EXISTS "UserFeedback" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "diagnosisId" TEXT UNIQUE NOT NULL REFERENCES "Diagnosis"("id") ON DELETE CASCADE,
+  "wasCorrect" BOOLEAN NOT NULL,
+  "correction" TEXT,
+  "notes" TEXT,
+  "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "ModelMetadata" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "version" TEXT UNIQUE NOT NULL,
+  "type" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'staging',
+  "description" TEXT NOT NULL,
+  "trainedOn" TEXT NOT NULL,
+  "accuracy" DOUBLE PRECISION,
+  "classes" JSONB,
+  "inputSize" JSONB,
+  "preprocessing" JSONB,
+  "lastUpdated" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "license" TEXT,
+  "citation" TEXT,
+  "isActive" BOOLEAN NOT NULL DEFAULT false,
+  "registeredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Safe upgrades for databases created from earlier versions.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "videoCreditsRemaining" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "uncertainty" TEXT DEFAULT 'low';
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "modelVersion" TEXT;
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "candidates" JSONB;
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "knowledgeReferences" JSONB;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "verificationCode" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "verificationCodeExpiresAt" TIMESTAMP(3);
+
 CREATE INDEX IF NOT EXISTS "idx_plant_user" ON "Plant"("userId");
+CREATE INDEX IF NOT EXISTS "idx_plant_species" ON "Plant"("species");
 CREATE INDEX IF NOT EXISTS "idx_diagnosis_user" ON "Diagnosis"("userId");
 CREATE INDEX IF NOT EXISTS "idx_diagnosis_plant" ON "Diagnosis"("plantId");
+CREATE INDEX IF NOT EXISTS "idx_diagnosis_created" ON "Diagnosis"("createdAt");
 CREATE INDEX IF NOT EXISTS "idx_timeline_plant" ON "PlantTimelineEvent"("plantId");
 CREATE INDEX IF NOT EXISTS "idx_caretask_user" ON "CarePlanTask"("userId");
 CREATE INDEX IF NOT EXISTS "idx_chat_user" ON "ChatMessage"("userId");
+CREATE INDEX IF NOT EXISTS "idx_invoice_user" ON "Invoice"("userId");
