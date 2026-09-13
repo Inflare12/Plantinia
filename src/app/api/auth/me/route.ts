@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
+import { getEffectiveSubscriptionTier } from '@/lib/payments/entitlements';
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser(req);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const effectiveTier = getEffectiveSubscriptionTier(user);
 
     return NextResponse.json({
       user: {
@@ -12,13 +14,13 @@ export async function GET(req: NextRequest) {
         name: user.name,
         email: user.email,
         role: user.role,
-        subscriptionTier: user.subscriptionTier,
+        subscriptionTier: effectiveTier,
         subscriptionStatus: user.subscriptionStatus,
+        subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd,
         creditsRemaining: user.creditsRemaining,
         videoCreditsRemaining: user.videoCreditsRemaining,
         isEmailVerified: user.isEmailVerified,
         avatarUrl: user.avatarUrl,
-        // Never expose the reusable API key in the normal session endpoint.
         hasApiKey: Boolean(user.apiKey),
         createdAt: user.createdAt,
       },
