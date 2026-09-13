@@ -3,8 +3,8 @@
   "mode": "joint",
   "vision": {
     "backbone": "mobilenet_v3_small",
-    "num_classes": 3,
-    "labels": ["healthy", "underwatered", "overwatered"],
+    "num_classes": 4,
+    "labels": ["healthy", "water_stress_3_days", "water_stress_6_days", "water_stress_9_days"],
     "image_size": 224,
     "pretrained": true
   },
