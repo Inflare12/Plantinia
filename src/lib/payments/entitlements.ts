@@ -5,7 +5,7 @@ import { prisma } from '../db/prisma';
 
 export interface EntitlementCheckResult { allowed: boolean; reason?: string; remainingCredits?: number; remainingVideoCredits?: number; }
 
-function effectiveTier(user: User): SubscriptionTier {
+export function getEffectiveSubscriptionTier(user: User): SubscriptionTier {
   const tier = (user.subscriptionTier as SubscriptionTier) || 'free';
   if (tier === 'free') return 'free';
   if (!user.subscriptionCurrentPeriodEnd) return 'free';
@@ -21,7 +21,6 @@ async function atomicDecrement(userId: string, field: 'creditsRemaining' | 'vide
     const result = await prisma.user.updateMany({ where: { id: userId, [field]: { gt: 0 } }, data: { [field]: { decrement: 1 } } });
     return result.count === 1;
   }
-  // Test/local fallback when CI deliberately uses the in-memory adapter.
   const user = await db.users.findById(userId);
   if (!user || (user[field] ?? 0) <= 0) return false;
   await db.users.update(userId, { [field]: (user[field] ?? 0) - 1 });
@@ -29,7 +28,7 @@ async function atomicDecrement(userId: string, field: 'creditsRemaining' | 'vide
 }
 
 export async function checkAndDeductDiagnosisEntitlement(user: User, mediaType: 'image' | 'video' = 'image'): Promise<EntitlementCheckResult> {
-  const tier = effectiveTier(user);
+  const tier = getEffectiveSubscriptionTier(user);
   const plan = getPlan(tier);
   if (plan.creditsPerMonth === 'unlimited') return { allowed: true };
 
@@ -54,7 +53,7 @@ export async function checkAndDeductDiagnosisEntitlement(user: User, mediaType: 
 }
 
 export async function checkPlantTrackingEntitlement(user: User): Promise<EntitlementCheckResult> {
-  const tier = effectiveTier(user);
+  const tier = getEffectiveSubscriptionTier(user);
   const plan = getPlan(tier);
   if (plan.maxTrackedPlants === 'unlimited') return { allowed: true };
   const existingPlants = await db.plants.listByUser(user.id);
@@ -68,13 +67,13 @@ export async function checkPlantTrackingEntitlement(user: User): Promise<Entitle
 }
 
 export function canAccessChat(user: User): { allowed: boolean; mode: 'basic' | 'advanced'; reason?: string } {
-  const tier = effectiveTier(user);
+  const tier = getEffectiveSubscriptionTier(user);
   if (tier === 'free') return { allowed: false, mode: 'basic', reason: 'AI Plant Doctor chat is available from the Plant Care plan.' };
   return { allowed: true, mode: tier === 'doctor' || tier === 'pro' || tier === 'farm' ? 'advanced' : 'basic' };
 }
 
 export function canExportPdfReport(user: User): boolean {
-  const tier = effectiveTier(user);
+  const tier = getEffectiveSubscriptionTier(user);
   return tier === 'doctor' || tier === 'pro' || tier === 'farm';
 }
 
