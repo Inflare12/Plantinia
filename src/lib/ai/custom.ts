@@ -1,102 +1,55 @@
-import {
-  IAIEngine,
-  DiagnosisInput,
-  DiagnosisOutput,
-  IdentifyInput,
-  IdentifyOutput,
-  ChatInput,
-  ChatOutput,
-} from './types';
+import { IAIEngine, DiagnosisInput, DiagnosisOutput, IdentifyInput, IdentifyOutput, ChatInput, ChatOutput } from './types';
 import { env } from '../env';
+import { validateDiagnosisOutput, validateIdentifyOutput, validateChatOutput } from './validation';
+
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+async function request(endpoint: string, apiKey: string, body: unknown): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Custom inference error ${response.status}`);
+    const text = await response.text();
+    if (text.length > MAX_RESPONSE_BYTES) throw new Error('Custom inference response is too large');
+    return JSON.parse(text);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export class CustomInferenceAIEngine implements IAIEngine {
   name = 'custom-gpu-inference-engine';
+  private get endpoint(): string { return env.CUSTOM_INFERENCE_URL || ''; }
+  private get apiKey(): string { return env.CUSTOM_INFERENCE_API_KEY || ''; }
 
-  private get endpoint(): string {
-    return env.CUSTOM_INFERENCE_URL || '';
-  }
-
-  private get apiKey(): string {
-    return env.CUSTOM_INFERENCE_API_KEY || '';
+  private endpointFor(path: string): string {
+    if (!this.endpoint) throw new Error('CUSTOM_INFERENCE_URL is not configured for custom model');
+    return `${this.endpoint.replace(/\/$/, '')}/${path}`;
   }
 
   async diagnosePlant(input: DiagnosisInput): Promise<DiagnosisOutput> {
-    if (!this.endpoint) {
-      throw new Error('CUSTOM_INFERENCE_URL is not configured for custom model');
-    }
-
-    const response = await fetch(`${this.endpoint}/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        mediaUrl: input.mediaUrl,
-        mediaType: input.mediaType,
-        speciesHint: input.plantSpeciesHint,
-        notes: input.notes,
-      }),
+    const data = await request(this.endpointFor('predict'), this.apiKey, {
+      mediaUrl: input.mediaUrl,
+      mediaType: input.mediaType,
+      speciesHint: input.plantSpeciesHint?.slice(0, 1000),
+      notes: input.notes?.slice(0, 1000),
     });
-
-    if (!response.ok) {
-      throw new Error(`Custom inference error ${response.status}`);
-    }
-
-    const data = await response.json();
-    return {
-      ...data,
-      aiProviderUsed: 'custom-dedicated-gpu',
-    };
+    return { ...validateDiagnosisOutput(data), aiProviderUsed: 'custom-dedicated-gpu' };
   }
 
   async identifyPlant(input: IdentifyInput): Promise<IdentifyOutput> {
-    if (!this.endpoint) {
-      throw new Error('CUSTOM_INFERENCE_URL is not configured');
-    }
-
-    const response = await fetch(`${this.endpoint}/identify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      body: JSON.stringify({ imageUrl: input.imageUrl }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Custom identify error ${response.status}`);
-    }
-
-    const data = await response.json();
-    return {
-      ...data,
-      aiProviderUsed: 'custom-dedicated-gpu',
-    };
+    const data = await request(this.endpointFor('identify'), this.apiKey, { imageUrl: input.imageUrl });
+    return { ...validateIdentifyOutput(data), aiProviderUsed: 'custom-dedicated-gpu' };
   }
 
   async chatWithDoctor(input: ChatInput): Promise<ChatOutput> {
-    if (!this.endpoint) {
-      throw new Error('CUSTOM_INFERENCE_URL is not configured');
-    }
-
-    const response = await fetch(`${this.endpoint}/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      body: JSON.stringify(input),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Custom chat error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return {
-      ...data,
-      aiProviderUsed: 'custom-dedicated-gpu',
-    };
+    const data = await request(this.endpointFor('chat'), this.apiKey, input);
+    return { ...validateChatOutput(data), aiProviderUsed: 'custom-dedicated-gpu' };
   }
 }
