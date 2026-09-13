@@ -25,7 +25,7 @@ function validateEnv(): Env {
       if (value.EMAIL_PROVIDER === 'smtp' && (!value.SMTP_HOST || !value.SMTP_USER || !value.SMTP_PASSWORD)) throw new Error('SMTP configuration is required in production');
       if (value.EMAIL_PROVIDER === 'resend' && !value.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required in production');
       if (value.STORAGE_PROVIDER !== 'supabase') throw new Error('Production media storage currently requires STORAGE_PROVIDER=supabase; S3/R2 signing is not implemented yet');
-      if (!value.SUPABASE_URL || !value.SUPABASE_SERVICE_ROLE_KEY) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for production storage');
+      if (!value.SUPABASE_URL || !value.SUPABASE_SERVICE_ROLE_KEY || !value.NEXT_PUBLIC_STORAGE_PUBLIC_URL) throw new Error('SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and NEXT_PUBLIC_STORAGE_PUBLIC_URL are required for production storage');
       if (value.NEXT_PUBLIC_RAZORPAY_KEY_ID && (!value.RAZORPAY_KEY_SECRET || !value.RAZORPAY_WEBHOOK_SECRET)) throw new Error('Razorpay secret and webhook secret are required when Razorpay is enabled');
       if (value.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && (!value.STRIPE_SECRET_KEY || !value.STRIPE_WEBHOOK_SECRET)) throw new Error('Stripe secret and webhook secret are required when Stripe is enabled');
     }
