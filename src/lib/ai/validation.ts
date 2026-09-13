@@ -1,12 +1,106 @@
 import { z } from 'zod';
 import { DiagnosisOutput, IdentifyOutput, ChatOutput } from './types';
 
-const treatmentStepSchema=z.object({stepNumber:z.coerce.number().int().min(1).max(100),title:z.string().min(1).max(200),instruction:z.string().min(1).max(4000),frequency:z.string().min(1).max(500),isComplete:z.boolean().optional()});
-const chemicalRemedySchema=z.object({name:z.string().min(1).max(200),activeIngredient:z.string().max(500),approximateCost:z.string().max(200),instructions:z.string().min(1).max(4000)});
-const boundingBoxSchema=z.object({x:z.coerce.number().min(0).max(100),y:z.coerce.number().min(0).max(100),width:z.coerce.number().min(0).max(100),height:z.coerce.number().min(0).max(100),label:z.string().min(1).max(200)});
-export const diagnosisOutputSchema=z.object({identifiedSpecies:z.string().min(1).max(300),diseaseName:z.string().min(1).max(300),pathogenType:z.enum(['fungal','bacterial','viral','pest','environmental','none']),confidence:z.coerce.number().min(0).max(100),severity:z.enum(['mild','moderate','severe','critical']),symptoms:z.array(z.string().min(1).max(1000)).max(50),causes:z.array(z.string().min(1).max(1000)).max(50),prognosis:z.string().max(5000),treatmentSteps:z.array(treatmentStepSchema).max(50),organicRemedies:z.array(z.string().min(1).max(2000)).max(50),chemicalRemedies:z.array(chemicalRemedySchema).max(50),preventativeMeasures:z.array(z.string().min(1).max(2000)).max(50),boundingBoxes:z.array(boundingBoxSchema).max(100)});
-export const identifyOutputSchema=z.object({species:z.string().min(1).max(300),commonName:z.string().min(1).max(300),family:z.string().min(1).max(200),confidence:z.coerce.number().min(0).max(100),sunlightNeeds:z.enum(['direct','indirect','low','shade']),wateringFrequencyDays:z.coerce.number().int().min(0).max(365),difficulty:z.enum(['easy','moderate','expert']),careSummary:z.string().max(5000),toxicityAlert:z.string().max(2000).nullable().optional()});
-export const chatOutputSchema=z.object({response:z.string().min(1).max(12000),suggestedFollowUps:z.array(z.string().min(1).max(500)).max(10)});
-export function validateDiagnosisOutput(value:unknown):Omit<DiagnosisOutput,'aiProviderUsed'>{return diagnosisOutputSchema.parse(value) as Omit<DiagnosisOutput,'aiProviderUsed'>;}
-export function validateIdentifyOutput(value:unknown):Omit<IdentifyOutput,'aiProviderUsed'>{return identifyOutputSchema.parse(value) as Omit<IdentifyOutput,'aiProviderUsed'>;}
-export function validateChatOutput(value:unknown):Omit<ChatOutput,'aiProviderUsed'>{return chatOutputSchema.parse(value) as Omit<ChatOutput,'aiProviderUsed'>;}
+const treatmentStepSchema = z.object({
+  stepNumber: z.coerce.number().int().min(1).max(100),
+  title: z.string().min(1).max(200),
+  instruction: z.string().min(1).max(4000),
+  frequency: z.string().min(1).max(500),
+  isComplete: z.boolean().optional(),
+});
+
+const chemicalRemedySchema = z.object({
+  name: z.string().min(1).max(200),
+  activeIngredient: z.string().max(500),
+  approximateCost: z.string().max(200),
+  instructions: z.string().min(1).max(4000),
+});
+
+const boundingBoxSchema = z.object({
+  x: z.coerce.number().min(0).max(100),
+  y: z.coerce.number().min(0).max(100),
+  width: z.coerce.number().min(0).max(100),
+  height: z.coerce.number().min(0).max(100),
+  label: z.string().min(1).max(200),
+});
+
+export const diagnosisOutputSchema = z.object({
+  identifiedSpecies: z.string().min(1).max(300),
+  diseaseName: z.string().min(1).max(300),
+  pathogenType: z.enum(['fungal', 'bacterial', 'viral', 'pest', 'environmental', 'none']),
+  confidence: z.coerce.number().min(0).max(100),
+  severity: z.enum(['mild', 'moderate', 'severe', 'critical']),
+  symptoms: z.array(z.string().min(1).max(1000)).max(50),
+  causes: z.array(z.string().min(1).max(1000)).max(50),
+  prognosis: z.string().max(5000),
+  treatmentSteps: z.array(treatmentStepSchema).max(50),
+  organicRemedies: z.array(z.string().min(1).max(2000)).max(50),
+  chemicalRemedies: z.array(chemicalRemedySchema).max(50),
+  preventativeMeasures: z.array(z.string().min(1).max(2000)).max(50),
+  boundingBoxes: z.array(boundingBoxSchema).max(100),
+});
+
+export const identifyOutputSchema = z.object({
+  species: z.string().min(1).max(300),
+  commonName: z.string().min(1).max(300),
+  family: z.string().min(1).max(200),
+  confidence: z.coerce.number().min(0).max(100),
+  sunlightNeeds: z.enum(['direct', 'indirect', 'low', 'shade']),
+  wateringFrequencyDays: z.coerce.number().int().min(0).max(365),
+  difficulty: z.enum(['easy', 'moderate', 'expert']),
+  careSummary: z.string().max(5000),
+  toxicityAlert: z.string().max(2000).nullable().optional(),
+});
+
+export const chatOutputSchema = z.object({
+  response: z.string().min(1).max(12000),
+  suggestedFollowUps: z.array(z.string().min(1).max(500)).max(10),
+});
+
+/**
+ * Gemini sometimes returns bounding-box coordinates in pixels despite the prompt
+ * asking for normalized percentages. The public diagnosis contract is deliberately
+ * kept at 0-100 percentages. Invalid boxes are discarded rather than converted using
+ * guessed image dimensions. Valid boxes are constrained so they cannot extend outside
+ * the image.
+ */
+export function normalizeDiagnosisOutput(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+
+  const source = value as Record<string, unknown>;
+  const boxes = Array.isArray(source.boundingBoxes) ? source.boundingBoxes : [];
+  const normalizedBoxes = boxes.flatMap((box) => {
+    if (!box || typeof box !== 'object' || Array.isArray(box)) return [];
+    const raw = box as Record<string, unknown>;
+    const x = Number(raw.x);
+    const y = Number(raw.y);
+    const width = Number(raw.width);
+    const height = Number(raw.height);
+
+    if (![x, y, width, height].every(Number.isFinite)) return [];
+    // Do not guess how to convert pixel coordinates without image dimensions.
+    if (x < 0 || y < 0 || width < 0 || height < 0 || x > 100 || y > 100 || width > 100 || height > 100) return [];
+
+    return [{
+      ...raw,
+      x,
+      y,
+      width: Math.min(width, 100 - x),
+      height: Math.min(height, 100 - y),
+    }];
+  });
+
+  return { ...source, boundingBoxes: normalizedBoxes };
+}
+
+export function validateDiagnosisOutput(value: unknown): Omit<DiagnosisOutput, 'aiProviderUsed'> {
+  return diagnosisOutputSchema.parse(value) as Omit<DiagnosisOutput, 'aiProviderUsed'>;
+}
+
+export function validateIdentifyOutput(value: unknown): Omit<IdentifyOutput, 'aiProviderUsed'> {
+  return identifyOutputSchema.parse(value) as Omit<IdentifyOutput, 'aiProviderUsed'>;
+}
+
+export function validateChatOutput(value: unknown): Omit<ChatOutput, 'aiProviderUsed'> {
+  return chatOutputSchema.parse(value) as Omit<ChatOutput, 'aiProviderUsed'>;
+}
