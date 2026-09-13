@@ -21,6 +21,22 @@ async function verifyStripeWebhookSignature(rawBody: string, signatureHeader: st
 
 function validTier(value: unknown): value is SubscriptionTier { return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SUBSCRIPTION_PLANS, value) && value !== 'free'; }
 
+async function applyPaidState(userId: string, tier: SubscriptionTier, periodEnd?: number | null, providerSubscriptionId?: string) {
+  const plan = getPlan(tier);
+  const videoCredits = plan.videoCreditsPerMonth === 'unlimited' ? 9999 : plan.videoCreditsPerMonth;
+  const updated = await db.users.update(userId, {
+    subscriptionTier: plan.id,
+    subscriptionStatus: 'active',
+    subscriptionCurrentPeriodEnd: new Date((periodEnd || Math.floor(Date.now() / 1000) + 30 * 24 * 3600) * 1000).toISOString(),
+    paymentProvider: 'stripe',
+    subscriptionId: providerSubscriptionId,
+    creditsRemaining: plan.creditsPerMonth === 'unlimited' ? 9999 : plan.creditsPerMonth,
+  });
+  if (!updated) return false;
+  if (/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL || '')) await prisma.user.update({ where: { id: userId }, data: { videoCreditsRemaining: videoCredits } });
+  return true;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
@@ -35,17 +51,44 @@ export async function POST(req: NextRequest) {
       if (session.mode !== 'subscription' || session.payment_status !== 'paid' || session.amount_total !== Math.round(plan.priceUSD * 100)) return NextResponse.json({ error: 'Webhook payment does not match the configured plan' }, { status: 400 });
       const user = await db.users.findById(userId); if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
       const paymentRef = String(session.id || ''); if (!paymentRef) return NextResponse.json({ error: 'Missing Stripe session ID' }, { status: 400 });
-
       let duplicate = false;
       try { await db.invoices.create({ userId: user.id, amount: plan.priceUSD, currency: 'USD', provider: 'stripe', providerPaymentId: paymentRef, status: 'paid', plan: plan.name, receiptUrl: `#receipt-${paymentRef}` }); }
       catch (error: any) { const message = String(error?.message || '').toLowerCase(); if (message.includes('unique') || message.includes('duplicate')) duplicate = true; else throw error; }
-
-      const videoCredits = plan.videoCreditsPerMonth === 'unlimited' ? 9999 : plan.videoCreditsPerMonth;
-      const updated = await db.users.update(user.id, { subscriptionTier: plan.id, subscriptionStatus: 'active', subscriptionCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(), paymentProvider: 'stripe', subscriptionId: session.subscription || session.id, creditsRemaining: plan.creditsPerMonth === 'unlimited' ? 9999 : plan.creditsPerMonth });
-      if (!updated) return NextResponse.json({ error: 'Unable to update subscriber account' }, { status: 500 });
-      if (/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL || '')) await prisma.user.update({ where: { id: user.id }, data: { videoCreditsRemaining: videoCredits } });
+      const ok = await applyPaidState(user.id, tierValue as SubscriptionTier, null, session.subscription || session.id);
+      if (!ok) return NextResponse.json({ error: 'Unable to update subscriber account' }, { status: 500 });
       return NextResponse.json({ received: true, duplicate });
     }
+
+    if (event.type === 'invoice.paid') {
+      const invoice = event.data?.object || {};
+      const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+      if (subscriptionId) {
+        const user = await prisma.user.findFirst({ where: { subscriptionId } });
+        if (user) {
+          const tier = user.subscriptionTier as SubscriptionTier;
+          await applyPaidState(user.id, tier, invoice.lines?.data?.[0]?.period?.end || invoice.period_end, subscriptionId);
+        }
+      }
+      return NextResponse.json({ received: true });
+    }
+
+    if (event.type === 'invoice.payment_failed') {
+      const invoice = event.data?.object || {};
+      const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+      if (subscriptionId) await prisma.user.updateMany({ where: { subscriptionId }, data: { subscriptionStatus: 'PAST_DUE' } });
+      return NextResponse.json({ received: true });
+    }
+
+    if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+      const subscription = event.data?.object || {};
+      const subscriptionId = String(subscription.id || '');
+      if (subscriptionId) {
+        const status = event.type === 'customer.subscription.deleted' ? 'CANCELED' : subscription.status === 'past_due' ? 'PAST_DUE' : subscription.status === 'trialing' ? 'TRIALING' : 'ACTIVE';
+        await prisma.user.updateMany({ where: { subscriptionId }, data: { subscriptionStatus: status, subscriptionCurrentPeriodEnd: subscription.current_period_end ? new Date(subscription.current_period_end * 1000) : undefined } });
+      }
+      return NextResponse.json({ received: true });
+    }
+
     return NextResponse.json({ received: true });
   } catch (error) { console.error('Stripe webhook error:', error); return NextResponse.json({ error: 'Webhook processing failed' }, { status: 400 }); }
 }
