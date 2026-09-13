@@ -85,7 +85,7 @@ model Diagnosis {
   boundingBoxes         Json?
   aiProviderUsed        String
   modelVersion          String?
-  candidates            Json?
+  candidates             Json?
   knowledgeReferences   Json?
   adminReviewed         Boolean      @default(false)
   adminAccuracyFeedback String?
@@ -210,9 +210,45 @@ model ModelMetadata {
   @@index([isActive])
 }
 
-enum Role { USER ADMIN }
-enum SubscriptionTier { FREE CARE DOCTOR PRO FARM }
-enum SubscriptionStatus { ACTIVE TRIALING CANCELED PAST_DUE }
-enum HealthStatus { HEALTHY WARNING CRITICAL TREATING }
-enum PathogenType { FUNGAL BACTERIAL VIRAL PEST ENVIRONMENTAL NONE }
-enum Severity { MILD MODERATE SEVERE CRITICAL }
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  CARE
+  DOCTOR
+  PRO
+  FARM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  CANCELED
+  PAST_DUE
+}
+
+enum HealthStatus {
+  HEALTHY
+  WARNING
+  CRITICAL
+  TREATING
+}
+
+enum PathogenType {
+  FUNGAL
+  BACTERIAL
+  VIRAL
+  PEST
+  ENVIRONMENTAL
+  NONE
+}
+
+enum Severity {
+  MILD
+  MODERATE
+  SEVERE
+  CRITICAL
+}
