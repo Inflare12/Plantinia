@@ -1,84 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth/session';
 import { db } from '@/lib/db/adapter';
 import { checkPlantTrackingEntitlement } from '@/lib/payments/entitlements';
 
+const plantSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  species: z.string().trim().max(150).optional(),
+  commonName: z.string().trim().max(150).optional(),
+  imageUrl: z.string().url().max(2000).refine((v) => v.startsWith('https://'), 'Image must use HTTPS').optional(),
+  location: z.enum(['indoor', 'outdoor', 'balcony', 'greenhouse']).optional(),
+  sunlightNeeds: z.enum(['direct', 'indirect', 'low', 'shade']).optional(),
+  wateringFrequencyDays: z.coerce.number().int().min(1).max(365).optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=600&auto=format&fit=crop&q=80';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const plants = await db.plants.listByUser(user.id);
-    return NextResponse.json({ plants });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ plants: await db.plants.listByUser(user.id) });
+  } catch (error) {
+    console.error('Plants GET error:', error);
+    return NextResponse.json({ error: 'Unable to load plants' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getSessionUser(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Enforce server-side plant tracking quota
     const quotaCheck = await checkPlantTrackingEntitlement(user);
-    if (!quotaCheck.allowed) {
-      return NextResponse.json({ error: quotaCheck.reason }, { status: 403 });
-    }
+    if (!quotaCheck.allowed) return NextResponse.json({ error: quotaCheck.reason }, { status: 403 });
 
-    const body = await req.json();
-    const { name, species, commonName, imageUrl, location, sunlightNeeds, wateringFrequencyDays, notes } = body;
-
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return NextResponse.json({ error: 'Plant nickname is required' }, { status: 400 });
-    }
-
-    const safeWateringDays = Math.max(1, Math.min(365, parseInt(String(wateringFrequencyDays), 10) || 7));
+    const parsed = plantSchema.safeParse(await req.json());
+    if (!parsed.success) return NextResponse.json({ error: 'Invalid plant details', details: parsed.error.flatten() }, { status: 400 });
+    const data = parsed.data;
+    const wateringDays = data.wateringFrequencyDays ?? 7;
+    const now = new Date();
 
     const newPlant = await db.plants.create({
       userId: user.id,
-      name: name.trim().slice(0, 100),
-      species: species ? String(species).trim().slice(0, 150) : 'Unknown botanical species',
-      commonName: commonName ? String(commonName).trim().slice(0, 150) : name.trim().slice(0, 100),
-      imageUrl: imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')
-        ? imageUrl.slice(0, 500)
-        : 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=600&auto=format&fit=crop&q=80',
-      location: location && typeof location === 'string' ? location.slice(0, 50) : 'indoor',
+      name: data.name,
+      species: data.species || 'Unknown botanical species',
+      commonName: data.commonName || data.name,
+      imageUrl: data.imageUrl || DEFAULT_IMAGE,
+      location: data.location || 'indoor',
       healthStatus: 'healthy',
-      sunlightNeeds: sunlightNeeds && typeof sunlightNeeds === 'string' ? sunlightNeeds.slice(0, 50) : 'indirect',
-      wateringFrequencyDays: safeWateringDays,
-      lastWateredDate: new Date().toISOString(),
-      nextWateringDate: new Date(Date.now() + safeWateringDays * 24 * 3600 * 1000).toISOString(),
-      notes: notes ? String(notes).slice(0, 2000) : '',
+      sunlightNeeds: data.sunlightNeeds || 'indirect',
+      wateringFrequencyDays: wateringDays,
+      lastWateredDate: now.toISOString(),
+      nextWateringDate: new Date(now.getTime() + wateringDays * 24 * 3600 * 1000).toISOString(),
+      notes: data.notes || '',
     });
 
-    // Automatically create initial timeline entry
-    await db.timeline.create({
-      plantId: newPlant.id,
-      userId: user.id,
-      eventType: 'note',
-      title: `Added ${newPlant.name} to Garden`,
-      description: `Welcome to the collection! Initial watering schedule set to every ${newPlant.wateringFrequencyDays} days.`,
-      imageUrl: newPlant.imageUrl,
-    });
-
-    // Schedule initial care task
-    await db.careTasks.create({
-      userId: user.id,
-      plantId: newPlant.id,
-      plantName: newPlant.name,
-      title: `Water ${newPlant.name}`,
-      category: 'water',
-      dueDate: newPlant.nextWateringDate?.split('T')[0] || new Date().toISOString().split('T')[0],
-      isCompleted: false,
-    });
+    try {
+      await db.timeline.create({
+        plantId: newPlant.id,
+        userId: user.id,
+        eventType: 'note',
+        title: `Added ${newPlant.name} to Garden`,
+        description: `Welcome to the collection! Initial watering schedule set to every ${newPlant.wateringFrequencyDays} days.`,
+        imageUrl: newPlant.imageUrl,
+      });
+      await db.careTasks.create({
+        userId: user.id,
+        plantId: newPlant.id,
+        plantName: newPlant.name,
+        title: `Water ${newPlant.name}`,
+        category: 'water',
+        dueDate: newPlant.nextWateringDate?.split('T')[0] || now.toISOString().split('T')[0],
+        isCompleted: false,
+      });
+    } catch (secondaryError) {
+      // The plant itself is valid and persisted; surface the failure instead of pretending
+      // the entire operation was atomic. A later repair job can rebuild derived records.
+      console.error('Failed to create initial plant timeline/task:', secondaryError);
+    }
 
     return NextResponse.json({ plant: newPlant }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error('Plants POST error:', error);
+    return NextResponse.json({ error: 'Unable to create plant' }, { status: 500 });
   }
 }
