@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Camera, Upload, Video, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { CameraCaptureModal } from '@/components/camera/CameraCaptureModal';
@@ -27,7 +27,6 @@ function dataUrlToFile(dataUrl: string, type: 'image'|'video') {
 
 export default function DiagnosePage() {
   const router = useRouter();
-  const params = useSearchParams();
   const [mediaUrl,setMediaUrl]=useState<string|null>(null);
   const [mediaType,setMediaType]=useState<'image'|'video'>('image');
   const [plantSpeciesHint,setPlantSpeciesHint]=useState('');
@@ -41,7 +40,8 @@ export default function DiagnosePage() {
   const [error,setError]=useState<string|null>(null);
 
   useEffect(()=>{
-    const hint=params.get('hint'); if(hint) setPlantSpeciesHint(hint.slice(0,1000));
+    const hint=new URLSearchParams(window.location.search).get('hint');
+    if(hint) setPlantSpeciesHint(hint.slice(0,1000));
     let cancelled=false;
     (async()=>{
       try {
@@ -59,7 +59,7 @@ export default function DiagnosePage() {
       finally { if(!cancelled) setIsUploading(false); }
     })();
     return ()=>{cancelled=true;};
-  },[params]);
+  },[]);
 
   async function handleMediaSelected(localUrl:string,type:'image'|'video',file?:File){
     setError(null); setMediaUrl(localUrl); setMediaType(type);
