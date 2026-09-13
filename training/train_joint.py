@@ -156,8 +156,11 @@ def main():
     tok,llm=load_llm(path(l["base_model"]),cfg)
     weights=models.MobileNet_V3_Small_Weights.DEFAULT if v.get("pretrained",True) else None
     vision=models.mobilenet_v3_small(weights=weights)
-    feature_dim=vision.classifier[-1].in_features
-    vision.classifier[-1]=nn.Linear(feature_dim,v["num_classes"])
+    # MobileNetV3-Small features() outputs 576 channels. The classifier's
+    # first Linear consumes those 576 features and expands them to 1024;
+    # classifier[-1].in_features is 1024, which is NOT the pooled feature size.
+    feature_dim=vision.classifier[0].in_features
+    vision.classifier[-1]=nn.Linear(vision.classifier[-1].in_features,v["num_classes"])
     model=PTNWatermeal(vision,feature_dim,llm).to(dev)
     train=JointDataset(path(d["joint_train"])); valid=JointDataset(path(d["joint_valid"]))
     collate=make_collate(tok,int(v["image_size"]),int(l["max_length"]),v["labels"])
@@ -186,7 +189,10 @@ def main():
         with torch.no_grad():
             for batch in va:
                 images,ids,mask,lbl,cids=[x.to(dev) for x in batch]
-                ll=model(images,ids,mask,lbl).loss; vl=F.cross_entropy(model.classify(images),cids); vtotal+=(ll+alpha*vl).item(); vlang+=ll.item(); vvis+=vl.item(); vcorrect+=(model.classify(images).argmax(1)==cids).sum().item(); vcount+=len(cids)
+                ll=model(images,ids,mask,lbl).loss
+                logits=model.classify(images)
+                vl=F.cross_entropy(logits,cids)
+                vtotal+=(ll+alpha*vl).item(); vlang+=ll.item(); vvis+=vl.item(); vcorrect+=(logits.argmax(1)==cids).sum().item(); vcount+=len(cids)
         metrics={"epoch":epoch,"train_total_loss":total/max(len(tr),1),"train_language_loss":lang/max(len(tr),1),"train_vision_loss":vis/max(len(tr),1),"train_vision_accuracy":correct/max(count,1),"valid_total_loss":vtotal/max(len(va),1),"valid_language_loss":vlang/max(len(va),1),"valid_vision_loss":vvis/max(len(va),1),"valid_vision_accuracy":vcorrect/max(vcount,1)}
         print(json.dumps(metrics,indent=2))
         torch.save({"model_name":cfg["model_name"],"architecture":"PTNWatermeal","state_dict":model.state_dict(),"config":cfg,"metrics":metrics},out/"model.pt")
