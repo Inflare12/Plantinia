@@ -1,0 +1,5425 @@
+﻿
+
+===== FILE: .env.example =====
+AI_PROVIDER=
+CUSTOM_INFERENCE_API_KEY=
+CUSTOM_INFERENCE_URL=
+DATABASE_URL=
+EMAIL_FROM=
+EMAIL_PROVIDER=
+GEMINI_API_KEY=
+GEMINI_MODEL=
+JWT_SECRET=
+NEXT_PUBLIC_APP_URL=
+NEXT_PUBLIC_RAZORPAY_KEY_ID=
+NEXT_PUBLIC_STORAGE_PUBLIC_URL=
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+RESEND_API_KEY=
+S3_ACCESS_KEY=
+S3_BUCKET=
+S3_ENDPOINT=
+S3_REGION=
+S3_SECRET_KEY=
+STORAGE_PROVIDER=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=
+WEATHER_API_KEY=
+WEATHER_PROVIDER=
+
+
+===== FILE: next.config.mjs =====
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',
+  reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: 'https', hostname: '**.supabase.co' },
+      { protocol: 'https', hostname: '**.r2.cloudflarestorage.com' },
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
+    ],
+  },
+  experimental: {
+    serverActions: { bodySizeLimit: '25mb' },
+  },
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          // API clients authenticate with Bearer/API-key headers. Do not combine
+          // wildcard CORS with credentialed browser cookies.
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Credentials', value: 'false' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
+          { key: 'Access-Control-Allow-Headers', value: 'Accept, Authorization, Content-Type, X-API-Key, X-CSRF-Token' },
+        ],
+      },
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+
+
+===== FILE: package.json =====
+{
+  "name": "plantinia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready AI Plant Doctor SaaS & Mobile-Ready Web App",
+  "scripts": {
+    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -p 3000 -H 0.0.0.0",
+    "lint": "next lint",
+    "test": "node --import tsx --test tests/*.test.mjs",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/camera": "^6.1.3",
+    "@prisma/client": "^6.19.3",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.453.0",
+    "next": "^14.2.15",
+    "nodemailer": "^10.0.9",
+    "prisma": "^6.19.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@types/node": "^20.17.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.15",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.13",
+    "typescript": "^5.6.3"
+  }
+}
+
+
+===== FILE: prisma/migrations.sql =====
+-- Plantinia PostgreSQL production DDL / compatibility bootstrap
+-- Prisma schema is the canonical application schema. This file is kept for
+-- environments that bootstrap PostgreSQL without running Prisma migrations.
+
+CREATE TABLE IF NOT EXISTS "User" (
+  "id" TEXT PRIMARY KEY,
+  "email" TEXT UNIQUE NOT NULL,
+  "passwordHash" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "avatarUrl" TEXT,
+  "role" TEXT NOT NULL DEFAULT 'user',
+  "isEmailVerified" BOOLEAN NOT NULL DEFAULT false,
+  "verificationToken" TEXT,
+  "verificationCode" TEXT,
+  "verificationCodeExpiresAt" TIMESTAMP(3),
+  "resetPasswordToken" TEXT,
+  "subscriptionTier" TEXT NOT NULL DEFAULT 'free',
+  "subscriptionStatus" TEXT NOT NULL DEFAULT 'active',
+  "subscriptionCurrentPeriodEnd" TIMESTAMP(3),
+  "paymentProvider" TEXT,
+  "subscriptionId" TEXT,
+  "creditsRemaining" INTEGER NOT NULL DEFAULT 5,
+  "videoCreditsRemaining" INTEGER NOT NULL DEFAULT 0,
+  "apiKey" TEXT UNIQUE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Plant" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "name" TEXT NOT NULL,
+  "species" TEXT NOT NULL,
+  "commonName" TEXT NOT NULL,
+  "imageUrl" TEXT NOT NULL,
+  "location" TEXT NOT NULL DEFAULT 'indoor',
+  "healthStatus" TEXT NOT NULL DEFAULT 'healthy',
+  "sunlightNeeds" TEXT NOT NULL DEFAULT 'indirect',
+  "wateringFrequencyDays" INTEGER NOT NULL DEFAULT 7,
+  "lastWateredDate" TIMESTAMP(3),
+  "nextWateringDate" TIMESTAMP(3),
+  "notes" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Diagnosis" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "plantId" TEXT REFERENCES "Plant"("id") ON DELETE SET NULL,
+  "mediaType" TEXT NOT NULL DEFAULT 'image',
+  "mediaUrl" TEXT NOT NULL,
+  "identifiedSpecies" TEXT NOT NULL,
+  "diseaseName" TEXT NOT NULL,
+  "pathogenType" TEXT NOT NULL DEFAULT 'none',
+  "confidence" DOUBLE PRECISION NOT NULL,
+  "severity" TEXT NOT NULL DEFAULT 'mild',
+  "uncertainty" TEXT DEFAULT 'low',
+  "symptoms" JSONB NOT NULL,
+  "causes" JSONB NOT NULL,
+  "prognosis" TEXT NOT NULL,
+  "treatmentSteps" JSONB NOT NULL,
+  "organicRemedies" JSONB NOT NULL,
+  "chemicalRemedies" JSONB NOT NULL,
+  "preventativeMeasures" JSONB NOT NULL,
+  "boundingBoxes" JSONB,
+  "aiProviderUsed" TEXT NOT NULL,
+  "modelVersion" TEXT,
+  "candidates" JSONB,
+  "knowledgeReferences" JSONB,
+  "adminReviewed" BOOLEAN NOT NULL DEFAULT false,
+  "adminAccuracyFeedback" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "PlantTimelineEvent" (
+  "id" TEXT PRIMARY KEY,
+  "plantId" TEXT NOT NULL REFERENCES "Plant"("id") ON DELETE CASCADE,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "eventType" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "description" TEXT NOT NULL,
+  "imageUrl" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "CarePlanTask" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "plantId" TEXT REFERENCES "Plant"("id") ON DELETE SET NULL,
+  "plantName" TEXT,
+  "title" TEXT NOT NULL,
+  "category" TEXT NOT NULL,
+  "dueDate" TIMESTAMP(3) NOT NULL,
+  "isCompleted" BOOLEAN NOT NULL DEFAULT false,
+  "notes" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "ChatMessage" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "plantId" TEXT,
+  "role" TEXT NOT NULL,
+  "content" TEXT NOT NULL,
+  "mediaUrl" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "KnowledgeItem" (
+  "id" TEXT PRIMARY KEY,
+  "type" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "scientificName" TEXT UNIQUE,
+  "commonNames" JSONB,
+  "category" TEXT,
+  "description" TEXT,
+  "affectedPlants" JSONB,
+  "symptoms" JSONB,
+  "treatment" JSONB,
+  "prevention" JSONB,
+  "sources" JSONB,
+  "imageUrl" TEXT,
+  "metadata" JSONB,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "lastUpdated" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Invoice" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "amount" DOUBLE PRECISION NOT NULL,
+  "currency" TEXT NOT NULL DEFAULT 'INR',
+  "provider" TEXT NOT NULL,
+  "providerPaymentId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'paid',
+  "plan" TEXT NOT NULL,
+  "receiptUrl" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "Invoice_provider_providerPaymentId_key"
+  ON "Invoice"("provider", "providerPaymentId");
+
+CREATE TABLE IF NOT EXISTS "UserFeedback" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "diagnosisId" TEXT UNIQUE NOT NULL REFERENCES "Diagnosis"("id") ON DELETE CASCADE,
+  "wasCorrect" BOOLEAN NOT NULL,
+  "correction" TEXT,
+  "notes" TEXT,
+  "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "ModelMetadata" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "version" TEXT UNIQUE NOT NULL,
+  "type" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'staging',
+  "description" TEXT NOT NULL,
+  "trainedOn" TEXT NOT NULL,
+  "accuracy" DOUBLE PRECISION,
+  "classes" JSONB,
+  "inputSize" JSONB,
+  "preprocessing" JSONB,
+  "lastUpdated" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "license" TEXT,
+  "citation" TEXT,
+  "isActive" BOOLEAN NOT NULL DEFAULT false,
+  "registeredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Safe upgrades for databases created from earlier versions.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "videoCreditsRemaining" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "uncertainty" TEXT DEFAULT 'low';
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "modelVersion" TEXT;
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "candidates" JSONB;
+ALTER TABLE "Diagnosis" ADD COLUMN IF NOT EXISTS "knowledgeReferences" JSONB;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "verificationCode" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "verificationCodeExpiresAt" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "idx_plant_user" ON "Plant"("userId");
+CREATE INDEX IF NOT EXISTS "idx_plant_species" ON "Plant"("species");
+CREATE INDEX IF NOT EXISTS "idx_diagnosis_user" ON "Diagnosis"("userId");
+CREATE INDEX IF NOT EXISTS "idx_diagnosis_plant" ON "Diagnosis"("plantId");
+CREATE INDEX IF NOT EXISTS "idx_diagnosis_created" ON "Diagnosis"("createdAt");
+CREATE INDEX IF NOT EXISTS "idx_timeline_plant" ON "PlantTimelineEvent"("plantId");
+CREATE INDEX IF NOT EXISTS "idx_caretask_user" ON "CarePlanTask"("userId");
+CREATE INDEX IF NOT EXISTS "idx_chat_user" ON "ChatMessage"("userId");
+CREATE INDEX IF NOT EXISTS "idx_invoice_user" ON "Invoice"("userId");
+
+
+===== FILE: prisma/schema.prisma =====
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                           String               @id @default(cuid())
+  email                        String               @unique
+  passwordHash                 String
+  name                         String
+  avatarUrl                    String?
+  role                         Role                 @default(USER)
+  isEmailVerified              Boolean              @default(false)
+  verificationToken            String?
+  verificationCode             String?
+  verificationCodeExpiresAt    DateTime?
+  resetPasswordToken           String?
+  subscriptionTier             SubscriptionTier     @default(FREE)
+  subscriptionStatus           SubscriptionStatus   @default(ACTIVE)
+  subscriptionCurrentPeriodEnd DateTime?
+  paymentProvider              String?
+  subscriptionId               String?
+  creditsRemaining             Int                  @default(5)
+  videoCreditsRemaining        Int                  @default(0)
+  apiKey                       String?              @unique
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+  careTasks                    CarePlanTask[]
+  chatMessages                 ChatMessage[]
+  diagnoses                    Diagnosis[]
+  invoices                     Invoice[]
+  plants                       Plant[]
+  timelineEvents               PlantTimelineEvent[]
+  feedback                     UserFeedback[]
+}
+
+model Plant {
+  id                    String               @id @default(cuid())
+  userId                String
+  name                  String
+  species               String
+  commonName            String
+  imageUrl              String
+  location              String               @default("indoor")
+  healthStatus          HealthStatus         @default(HEALTHY)
+  sunlightNeeds         String               @default("indirect")
+  wateringFrequencyDays Int                  @default(7)
+  lastWateredDate       DateTime?
+  nextWateringDate      DateTime?
+  notes                 String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  careTasks             CarePlanTask[]
+  diagnoses             Diagnosis[]
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timelineEvents        PlantTimelineEvent[]
+  @@index([userId])
+  @@index([species])
+  @@index([healthStatus])
+}
+
+model Diagnosis {
+  id                    String       @id @default(cuid())
+  userId                String
+  plantId               String?
+  mediaType             String       @default("image")
+  mediaUrl              String
+  identifiedSpecies     String
+  diseaseName           String
+  pathogenType          PathogenType @default(NONE)
+  confidence            Float
+  severity              Severity     @default(MILD)
+  uncertainty           String?      @default("low")
+  symptoms              Json
+  causes                Json
+  prognosis             String
+  treatmentSteps        Json
+  organicRemedies       Json
+  chemicalRemedies      Json
+  preventativeMeasures  Json
+  boundingBoxes         Json?
+  aiProviderUsed        String
+  modelVersion          String?
+  candidates            Json?
+  knowledgeReferences   Json?
+  adminReviewed         Boolean      @default(false)
+  adminAccuracyFeedback String?
+  createdAt             DateTime     @default(now())
+  plant                 Plant?       @relation(fields: [plantId], references: [id])
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedback              UserFeedback[]
+  @@index([userId])
+  @@index([plantId])
+  @@index([createdAt])
+}
+
+model PlantTimelineEvent {
+  id          String   @id @default(cuid())
+  plantId     String
+  userId      String
+  eventType   String
+  title       String
+  description String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  plant       Plant    @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CarePlanTask {
+  id          String   @id @default(cuid())
+  userId      String
+  plantId     String?
+  plantName   String?
+  title       String
+  category    String
+  dueDate     DateTime
+  isCompleted Boolean  @default(false)
+  notes       String?
+  plant       Plant?   @relation(fields: [plantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  plantId   String?
+  role      String
+  content   String
+  mediaUrl  String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeItem {
+  id             String   @id @default(cuid())
+  type           String
+  name           String
+  scientificName String?  @unique
+  commonNames    Json?
+  category       String?
+  description    String?
+  affectedPlants Json?
+  symptoms       Json?
+  treatment      Json?
+  prevention     Json?
+  sources        Json?
+  imageUrl       String?
+  metadata       Json?
+  isActive       Boolean  @default(true)
+  lastUpdated    DateTime @default(now())
+  @@index([type])
+  @@index([scientificName])
+  @@index([isActive])
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  userId            String
+  amount            Float
+  currency          String   @default("INR")
+  provider          String
+  providerPaymentId String
+  status            String   @default("paid")
+  plan              String
+  receiptUrl        String?
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerPaymentId])
+  @@index([userId])
+}
+
+model UserFeedback {
+  id           String   @id @default(cuid())
+  userId       String
+  diagnosisId  String   @unique
+  wasCorrect   Boolean
+  correction   String?
+  notes        String?
+  timestamp    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  diagnosis    Diagnosis @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([diagnosisId])
+}
+
+model ModelMetadata {
+  id              String   @id @default(cuid())
+  name            String
+  version         String   @unique
+  type            String
+  status          String   @default("staging")
+  description     String
+  trainedOn       String
+  accuracy        Float?
+  classes         Json?
+  inputSize       Json?
+  preprocessing   Json?
+  lastUpdated     DateTime @default(now())
+  license         String?
+  citation        String?
+  isActive        Boolean  @default(false)
+  registeredAt    DateTime @default(now())
+  @@index([type])
+  @@index([status])
+  @@index([isActive])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+enum SubscriptionTier {
+  FREE
+  CARE
+  DOCTOR
+  PRO
+  FARM
+}
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  CANCELED
+  PAST_DUE
+}
+enum HealthStatus {
+  HEALTHY
+  WARNING
+  CRITICAL
+  TREATING
+}
+enum PathogenType {
+  FUNGAL
+  BACTERIAL
+  VIRAL
+  PEST
+  ENVIRONMENTAL
+  NONE
+}
+enum Severity {
+  MILD
+  MODERATE
+  SEVERE
+  CRITICAL
+}
+
+
+
+===== FILE: src/lib/ai/custom.ts =====
+import {
+  IAIEngine,
+  DiagnosisInput,
+  DiagnosisOutput,
+  IdentifyInput,
+  IdentifyOutput,
+  ChatInput,
+  ChatOutput,
+} from './types';
+import { env } from '../env';
+
+export class CustomInferenceAIEngine implements IAIEngine {
+  name = 'custom-gpu-inference-engine';
+
+  private get endpoint(): string {
+    return env.CUSTOM_INFERENCE_URL || '';
+  }
+
+  private get apiKey(): string {
+    return env.CUSTOM_INFERENCE_API_KEY || '';
+  }
+
+  async diagnosePlant(input: DiagnosisInput): Promise<DiagnosisOutput> {
+    if (!this.endpoint) {
+      throw new Error('CUSTOM_INFERENCE_URL is not configured for custom model');
+    }
+
+    const response = await fetch(`${this.endpoint}/predict`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        mediaUrl: input.mediaUrl,
+        mediaType: input.mediaType,
+        speciesHint: input.plantSpeciesHint,
+        notes: input.notes,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Custom inference error ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      ...data,
+      aiProviderUsed: 'custom-dedicated-gpu',
+    };
+  }
+
+  async identifyPlant(input: IdentifyInput): Promise<IdentifyOutput> {
+    if (!this.endpoint) {
+      throw new Error('CUSTOM_INFERENCE_URL is not configured');
+    }
+
+    const response = await fetch(`${this.endpoint}/identify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      },
+      body: JSON.stringify({ imageUrl: input.imageUrl }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Custom identify error ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      ...data,
+      aiProviderUsed: 'custom-dedicated-gpu',
+    };
+  }
+
+  async chatWithDoctor(input: ChatInput): Promise<ChatOutput> {
+    if (!this.endpoint) {
+      throw new Error('CUSTOM_INFERENCE_URL is not configured');
+    }
+
+    const response = await fetch(`${this.endpoint}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      },
+      body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Custom chat error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      ...data,
+      aiProviderUsed: 'custom-dedicated-gpu',
+    };
+  }
+}
+
+
+===== FILE: src/lib/ai/gemini.ts =====
+import {
+  IAIEngine,
+  DiagnosisInput,
+  DiagnosisOutput,
+  IdentifyInput,
+  IdentifyOutput,
+  ChatInput,
+  ChatOutput,
+} from './types';
+import { env } from '../env';
+
+export class GeminiAIEngine implements IAIEngine {
+  name = 'gemini-vision-engine';
+
+  private get apiKey(): string {
+    return env.GEMINI_API_KEY || '';
+  }
+
+  private get model(): string {
+    return env.GEMINI_MODEL || 'gemini-3.5-flash';
+  }
+
+  async diagnosePlant(input: DiagnosisInput): Promise<DiagnosisOutput> {
+    if (!this.apiKey) {
+      throw new Error('GEMINI_API_KEY is not configured');
+    }
+
+    const systemPrompt = `You are an expert plant pathologist and AI plant doctor.
+Analyze the provided plant media/image/video and return a strict JSON object with these exact keys:
+{
+  "identifiedSpecies": "Scientific name and Common name",
+  "diseaseName": "Specific disease name or 'Healthy Plant'",
+  "pathogenType": "fungal" | "bacterial" | "viral" | "pest" | "environmental" | "none",
+  "confidence": number from 0 to 100,
+  "severity": "mild" | "moderate" | "severe" | "critical",
+  "symptoms": ["list of observable symptoms"],
+  "causes": ["biological or environmental factors causing this"],
+  "prognosis": "short prognosis paragraph",
+  "treatmentSteps": [{"stepNumber": 1, "title": "...", "instruction": "...", "frequency": "..."}],
+  "organicRemedies": ["What to make at home (recipes, natural sprays)"],
+  "chemicalRemedies": [{"name": "Product Name", "activeIngredient": "Ingredient", "approximateCost": "â‚¹ or $ range", "instructions": "How to apply"}],
+  "preventativeMeasures": ["steps to prevent recurrence"],
+  "boundingBoxes": [{"x": 10, "y": 20, "width": 30, "height": 40, "label": "Affected Area"}]
+}
+User notes: "${input.notes || 'None'}". Plant hint: "${input.plantSpeciesHint || 'None'}". Location: "${input.userLocation || 'Global'}".
+Respond ONLY with valid JSON. Do not include markdown code block backticks.`;
+
+    const parts: any[] = [{ text: systemPrompt }];
+
+    // If media is a data URI or URL
+    if (input.mediaUrl.startsWith('data:')) {
+      const match = input.mediaUrl.match(/^data:(image\/\w+|video\/\w+);base64,(.+)$/);
+      if (match) {
+        parts.push({
+          inlineData: {
+            mimeType: match[1],
+            data: match[2],
+          },
+        });
+      }
+    } else {
+      parts.push({
+        text: `Image media URL to inspect: ${input.mediaUrl}`,
+      });
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini API error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      throw new Error('Empty response from Gemini API');
+    }
+
+    const parsed = JSON.parse(candidateText.replace(/```json/g, '').replace(/```/g, '').trim());
+    return {
+      ...parsed,
+      aiProviderUsed: `gemini-${this.model}`,
+    };
+  }
+
+  async identifyPlant(input: IdentifyInput): Promise<IdentifyOutput> {
+    if (!this.apiKey) {
+      throw new Error('GEMINI_API_KEY is not configured');
+    }
+
+    const prompt = `Identify this plant species. Return JSON with keys:
+{
+  "species": "Botanical species name",
+  "commonName": "Common popular name",
+  "family": "Botanical family name",
+  "confidence": 0-100,
+  "sunlightNeeds": "direct" | "indirect" | "low" | "shade",
+  "wateringFrequencyDays": number of days between waterings,
+  "difficulty": "easy" | "moderate" | "expert",
+  "careSummary": "Comprehensive summary of care routine",
+  "toxicityAlert": "Toxicity warning for cats/dogs/children or null"
+}
+Respond with raw JSON only.`;
+
+    const parts: any[] = [{ text: prompt }];
+
+    if (input.imageUrl.startsWith('data:')) {
+      const match = input.imageUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (match) {
+        parts.push({
+          inlineData: { mimeType: match[1], data: match[2] },
+        });
+      }
+    } else {
+      parts.push({ text: `Image URL: ${input.imageUrl}` });
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parsed = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+
+    return {
+      ...parsed,
+      aiProviderUsed: `gemini-${this.model}`,
+    };
+  }
+
+  async chatWithDoctor(input: ChatInput): Promise<ChatOutput> {
+    if (!this.apiKey) {
+      throw new Error('GEMINI_API_KEY is not configured');
+    }
+
+    const context = `You are Dr. Flora, the world's most supportive and scientifically precise AI Plant Doctor for the Plantinia app.
+Context:
+${input.plantContext ? `Plant: ${input.plantContext.name} (${input.plantContext.species}), Status: ${input.plantContext.healthStatus}, Last Diag: ${input.plantContext.recentDiagnosis || 'None'}` : 'No specific plant selected.'}
+${input.weatherContext ? `Weather: ${input.weatherContext.tempC}Â°C, Humidity: ${input.weatherContext.humidity}%, Condition: ${input.weatherContext.condition}` : ''}
+Provide direct, actionable, compassionate care advice. Mention safe home remedies and timing.`;
+
+    const contents = input.messages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    // Prepend context to the first user message or system instruction
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: context }] },
+        contents,
+        generationConfig: { temperature: 0.7 },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini Chat error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    return {
+      response: replyText,
+      suggestedFollowUps: [
+        'How often should I fertilize this season?',
+        'Can I prune dead leaves right now?',
+        'What pest repellent can I make at home?',
+      ],
+      aiProviderUsed: `gemini-${this.model}`,
+    };
+  }
+}
+
+
+===== FILE: src/lib/ai/index.ts =====
+import { IAIEngine } from './types';
+import { GeminiAIEngine } from './gemini';
+import { OpenAIAIEngine } from './openai';
+import { CustomInferenceAIEngine } from './custom';
+import { MockAIEngine } from './mock';
+import { env } from '../env';
+
+export function getAIEngine(): IAIEngine {
+  const provider = env.AI_PROVIDER;
+
+  // 1. Explicit Gemini configuration
+  if (provider === 'gemini' && env.GEMINI_API_KEY) {
+    return new GeminiAIEngine();
+  }
+
+  // 2. Explicit OpenAI configuration
+  if (provider === 'openai' && env.OPENAI_API_KEY) {
+    return new OpenAIAIEngine();
+  }
+
+  // 3. Custom external GPU cluster
+  if (provider === 'custom' && env.CUSTOM_INFERENCE_URL) {
+    return new CustomInferenceAIEngine();
+  }
+
+  // 4. Auto-detect if user has GEMINI_API_KEY set even if AI_PROVIDER wasn't toggled
+  if (env.GEMINI_API_KEY) {
+    return new GeminiAIEngine();
+  }
+
+  // 5. Default reliable mock botanic engine for offline, dev & zero-cost testing
+  return new MockAIEngine();
+}
+
+export * from './types';
+
+
+===== FILE: src/lib/ai/openai.ts =====
+import {
+  IAIEngine,
+  DiagnosisInput,
+  DiagnosisOutput,
+  IdentifyInput,
+  IdentifyOutput,
+  ChatInput,
+  ChatOutput,
+} from './types';
+import { env } from '../env';
+
+export class OpenAIAIEngine implements IAIEngine {
+  name = 'openai-vision-engine';
+
+  private get apiKey(): string {
+    return env.OPENAI_API_KEY || '';
+  }
+
+  private get model(): string {
+    return env.OPENAI_MODEL || 'gpt-4o-mini';
+  }
+
+  async diagnosePlant(input: DiagnosisInput): Promise<DiagnosisOutput> {
+    if (!this.apiKey) {
+      throw new Error('OPENAI_API_KEY is not configured');
+    }
+
+    const systemPrompt = `You are an expert plant doctor. Analyze the plant image and return JSON:
+{
+  "identifiedSpecies": "Scientific & common name",
+  "diseaseName": "Disease name or Healthy Plant",
+  "pathogenType": "fungal" | "bacterial" | "viral" | "pest" | "environmental" | "none",
+  "confidence": 0-100,
+  "severity": "mild" | "moderate" | "severe" | "critical",
+  "symptoms": ["..."],
+  "causes": ["..."],
+  "prognosis": "...",
+  "treatmentSteps": [{"stepNumber": 1, "title": "...", "instruction": "...", "frequency": "..."}],
+  "organicRemedies": ["..."],
+  "chemicalRemedies": [{"name": "...", "activeIngredient": "...", "approximateCost": "...", "instructions": "..."}],
+  "preventativeMeasures": ["..."],
+  "boundingBoxes": [{"x": 10, "y": 20, "width": 30, "height": 40, "label": "..."}]
+}
+Respond with JSON only.`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Diagnose this plant. Hint: ${input.plantSpeciesHint || 'Unknown'}. Notes: ${input.notes || 'None'}`,
+              },
+              {
+                type: 'image_url',
+                image_url: { url: input.mediaUrl },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    const parsed = JSON.parse(content);
+
+    return {
+      ...parsed,
+      aiProviderUsed: `openai-${this.model}`,
+    };
+  }
+
+  async identifyPlant(input: IdentifyInput): Promise<IdentifyOutput> {
+    if (!this.apiKey) {
+      throw new Error('OPENAI_API_KEY is not configured');
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: 'Identify plant species. Return JSON with species, commonName, family, confidence, sunlightNeeds, wateringFrequencyDays, difficulty, careSummary, toxicityAlert.',
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Identify this plant species.' },
+              { type: 'image_url', image_url: { url: input.imageUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content);
+    return {
+      ...parsed,
+      aiProviderUsed: `openai-${this.model}`,
+    };
+  }
+
+  async chatWithDoctor(input: ChatInput): Promise<ChatOutput> {
+    if (!this.apiKey) {
+      throw new Error('OPENAI_API_KEY is not configured');
+    }
+
+    const systemPrompt = `You are Dr. Flora, the AI Plant Doctor in Plantinia. Be warm, accurate, and concise.`;
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...input.messages.map((m) => ({ role: m.role, content: m.content })),
+    ];
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI Chat error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      response: data.choices?.[0]?.message?.content || '',
+      suggestedFollowUps: ['What should I prune next?', 'How do I optimize watering?'],
+      aiProviderUsed: `openai-${this.model}`,
+    };
+  }
+}
+
+
+===== FILE: src/lib/ai/types.ts =====
+export type PathogenType = 'fungal' | 'bacterial' | 'viral' | 'pest' | 'environmental' | 'none';
+export type SeverityLevel = 'mild' | 'moderate' | 'severe' | 'critical';
+
+export interface TreatmentStep {
+  stepNumber: number;
+  title: string;
+  instruction: string;
+  frequency: string;
+  isComplete?: boolean;
+}
+
+export interface ChemicalRemedy {
+  name: string;
+  activeIngredient: string;
+  approximateCost: string;
+  instructions: string;
+}
+
+export interface BoundingBox {
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  width: number;
+  height: number;
+  label: string;
+}
+
+export interface DiagnosisInput {
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  plantSpeciesHint?: string;
+  notes?: string;
+  userLocation?: string;
+}
+
+export interface DiagnosisOutput {
+  identifiedSpecies: string;
+  diseaseName: string;
+  pathogenType: PathogenType;
+  confidence: number; // 0 - 100
+  severity: SeverityLevel;
+  symptoms: string[];
+  causes: string[];
+  prognosis: string;
+  treatmentSteps: TreatmentStep[];
+  organicRemedies: string[]; // "What to Make"
+  chemicalRemedies: ChemicalRemedy[]; // "What to Buy"
+  preventativeMeasures: string[];
+  boundingBoxes: BoundingBox[];
+  aiProviderUsed: string;
+}
+
+export interface IdentifyInput {
+  imageUrl: string;
+}
+
+export interface IdentifyOutput {
+  species: string;
+  commonName: string;
+  family: string;
+  confidence: number;
+  sunlightNeeds: 'direct' | 'indirect' | 'low' | 'shade';
+  wateringFrequencyDays: number;
+  difficulty: 'easy' | 'moderate' | 'expert';
+  careSummary: string;
+  toxicityAlert?: string;
+  aiProviderUsed: string;
+}
+
+export interface ChatMessageContext {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatInput {
+  messages: ChatMessageContext[];
+  plantContext?: {
+    name: string;
+    species: string;
+    healthStatus: string;
+    recentDiagnosis?: string;
+  };
+  weatherContext?: {
+    tempC: number;
+    humidity: number;
+    condition: string;
+  };
+}
+
+export interface ChatOutput {
+  response: string;
+  suggestedFollowUps: string[];
+  aiProviderUsed: string;
+}
+
+export interface IAIEngine {
+  name: string;
+  diagnosePlant(input: DiagnosisInput): Promise<DiagnosisOutput>;
+  identifyPlant(input: IdentifyInput): Promise<IdentifyOutput>;
+  chatWithDoctor(input: ChatInput): Promise<ChatOutput>;
+}
+
+
+===== FILE: src/lib/auth/jwt.ts =====
+import { env } from '../env';
+
+export interface JWTPayload {
+  userId: string;
+  email: string;
+  role: 'user' | 'admin';
+  subscriptionTier: 'free' | 'care' | 'doctor' | 'pro' | 'farm';
+  iat?: number;
+  exp?: number;
+}
+
+function base64UrlEncode(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlDecode(str: string): string {
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+async function getCryptoKey(secret: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  return crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify']
+  );
+}
+
+export async function signJWT(payload: Omit<JWTPayload, 'iat' | 'exp'>, expiresInDays = 30): Promise<string> {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload: JWTPayload = {
+    ...payload,
+    iat: now,
+    exp: now + expiresInDays * 24 * 60 * 60,
+  };
+
+  const headerB64 = base64UrlEncode(JSON.stringify(header));
+  const payloadB64 = base64UrlEncode(JSON.stringify(fullPayload));
+  const data = `${headerB64}.${payloadB64}`;
+
+  const key = await getCryptoKey(env.JWT_SECRET);
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+
+  let sigBinary = '';
+  const sigBytes = new Uint8Array(signature);
+  for (let i = 0; i < sigBytes.byteLength; i++) {
+    sigBinary += String.fromCharCode(sigBytes[i]);
+  }
+  const sigB64 = btoa(sigBinary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  return `${data}.${sigB64}`;
+}
+
+export async function verifyJWT(token: string): Promise<JWTPayload | null> {
+  try {
+    if (!token || typeof token !== 'string') return null;
+
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [headerB64, payloadB64, sigB64] = parts;
+    if (!headerB64 || !payloadB64 || !sigB64) return null;
+
+    // Verify header algorithm and type
+    const headerJson = base64UrlDecode(headerB64);
+    const header = JSON.parse(headerJson);
+    if (!header || header.alg !== 'HS256' || header.typ !== 'JWT') {
+      return null;
+    }
+
+    const data = `${headerB64}.${payloadB64}`;
+    const key = await getCryptoKey(env.JWT_SECRET);
+
+    let base64 = sigB64.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    const binary = atob(base64);
+    const sigBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      sigBytes[i] = binary.charCodeAt(i);
+    }
+
+    const isValid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      sigBytes,
+      new TextEncoder().encode(data)
+    );
+
+    if (!isValid) return null;
+
+    const payloadJson = base64UrlDecode(payloadB64);
+    const payload = JSON.parse(payloadJson) as JWTPayload;
+
+    if (!payload || typeof payload !== 'object') return null;
+    if (!payload.userId || !payload.email || typeof payload.userId !== 'string') {
+      return null;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    // Token must have an exp timestamp and not be expired
+    if (!payload.exp || typeof payload.exp !== 'number' || payload.exp < now) {
+      return null;
+    }
+
+    // Disallow future issued tokens with 5 minutes clock skew tolerance
+    if (payload.iat && typeof payload.iat === 'number' && payload.iat > now + 300) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+
+===== FILE: src/lib/auth/rate-limit.ts =====
+import { NextRequest } from 'next/server';
+
+interface RateLimitRecord {
+  timestamps: number[];
+}
+
+const rateLimitStore = new Map<string, RateLimitRecord>();
+
+// Cleanup stale records periodically
+if (typeof setInterval !== 'undefined') {
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [key, record] of rateLimitStore.entries()) {
+      record.timestamps = record.timestamps.filter((t) => now - t < 3600000);
+      if (record.timestamps.length === 0) {
+        rateLimitStore.delete(key);
+      }
+    }
+  }, 60000);
+  if (cleanupInterval.unref) {
+    cleanupInterval.unref();
+  }
+}
+
+export function getClientIp(req: NextRequest): string {
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
+  return '127.0.0.1';
+}
+
+export function checkRateLimit(
+  identifier: string,
+  limit: number,
+  windowMs: number
+): { allowed: boolean; remaining: number; resetTime: number } {
+  const now = Date.now();
+  let record = rateLimitStore.get(identifier);
+  if (!record) {
+    record = { timestamps: [] };
+    rateLimitStore.set(identifier, record);
+  }
+
+  // Filter timestamps within window
+  record.timestamps = record.timestamps.filter((t) => now - t < windowMs);
+
+  if (record.timestamps.length >= limit) {
+    const oldest = record.timestamps[0] || now;
+    return {
+      allowed: false,
+      remaining: 0,
+      resetTime: oldest + windowMs,
+    };
+  }
+
+  record.timestamps.push(now);
+  return {
+    allowed: true,
+    remaining: limit - record.timestamps.length,
+    resetTime: now + windowMs,
+  };
+}
+
+export function resetRateLimit(identifier: string): void {
+  rateLimitStore.delete(identifier);
+}
+
+
+===== FILE: src/lib/auth/session.ts =====
+import { NextRequest } from 'next/server';
+import { verifyJWT, JWTPayload } from './jwt';
+import { db } from '../db/adapter';
+import { User } from '../db/schema';
+
+export async function hashPassword(password: string): Promise<string> {
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    throw new Error('Password must be at least 8 characters');
+  }
+  if (password.length > 128) {
+    throw new Error('Password must not exceed 128 characters');
+  }
+
+  const enc = new TextEncoder();
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const salt = Array.from(saltBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const passKey = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+
+  const derivedKey = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: 310000,
+      hash: 'SHA-256',
+    },
+    passKey,
+    256
+  );
+
+  const hash = Array.from(new Uint8Array(derivedKey))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `pbkdf2_sha256$310000$${salt}$${hash}`;
+}
+
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  try {
+    if (!password || typeof password !== 'string' || password.length > 128) {
+      return false;
+    }
+    if (!stored || typeof stored !== 'string') {
+      return false;
+    }
+
+    const parts = stored.split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+    const iterations = Number(parts[1]);
+    const saltHex = parts[2];
+    const expectedHex = parts[3];
+    if (!Number.isInteger(iterations) || iterations < 100000) return false;
+
+    const salt = new Uint8Array(saltHex.match(/.{2}/g)?.map((h) => parseInt(h, 16)) || []);
+    if (salt.length < 16 || expectedHex.length !== 64) return false;
+
+    const enc = new TextEncoder();
+    const passKey = await crypto.subtle.importKey(
+      'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+    );
+    const derived = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      passKey,
+      256
+    );
+    const actual = new Uint8Array(derived);
+    const expected = new Uint8Array(expectedHex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+    if (actual.length !== expected.length) return false;
+
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+    return diff === 0;
+  } catch {
+    return false;
+  }
+}
+
+// Pre-computed dummy hash to run constant-time PBKDF2 calculation when an account is not found,
+// preventing timing attacks / email enumeration on login.
+const DUMMY_TIMING_HASH =
+  'pbkdf2_sha256$310000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000';
+
+export async function dummyVerifyPassword(): Promise<void> {
+  await verifyPassword('timing-defense-string-non-empty', DUMMY_TIMING_HASH);
+}
+
+export async function getSessionUser(req: NextRequest): Promise<User | null> {
+  const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
+  let token: string | null = null;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  }
+
+  if (!token) {
+    const cookie = req.cookies.get('plantinia_token');
+    if (cookie) token = cookie.value;
+  }
+
+  const apiKey = req.headers.get('x-api-key');
+  if (apiKey && apiKey.length >= 16) {
+    const matched = await db.users.findByApiKey(apiKey);
+    if (matched) return matched;
+  }
+
+  if (!token) return null;
+
+  const payload: JWTPayload | null = await verifyJWT(token);
+  if (!payload || !payload.userId) return null;
+
+  return await db.users.findById(payload.userId);
+}
+
+
+===== FILE: src/lib/db/adapter.ts =====
+import { prisma } from './prisma';
+import {
+  SEED_USERS,
+  SEED_PLANTS,
+  SEED_DIAGNOSES,
+  SEED_TIMELINE_EVENTS,
+  SEED_CARE_TASKS,
+  SEED_KNOWLEDGE_BASE,
+  SEED_MODEL_METADATA,
+  SEED_INVOICES,
+} from './seed-data';
+import {
+  User,
+  Plant,
+  Diagnosis,
+  PlantTimelineEvent,
+  CarePlanTask,
+  ChatMessage,
+  KnowledgeItem,
+  ModelMetadata,
+  Invoice,
+  UserFeedback,
+} from './schema';
+
+const roleToPrisma = (v: User['role']) => v.toUpperCase() as 'USER' | 'ADMIN';
+const tierToPrisma = (v: User['subscriptionTier']) =>
+  v.toUpperCase() as 'FREE' | 'CARE' | 'DOCTOR' | 'PRO' | 'FARM';
+const statusToPrisma = (v: User['subscriptionStatus']) =>
+  v.toUpperCase() as 'ACTIVE' | 'TRIALING' | 'CANCELED' | 'PAST_DUE';
+const healthToPrisma = (v: Plant['healthStatus']) =>
+  v.toUpperCase() as 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'TREATING';
+const pathogenToPrisma = (v: Diagnosis['pathogenType']) =>
+  v.toUpperCase() as 'FUNGAL' | 'BACTERIAL' | 'VIRAL' | 'PEST' | 'ENVIRONMENTAL' | 'NONE';
+const severityToPrisma = (v: Diagnosis['severity']) =>
+  v.toUpperCase() as 'MILD' | 'MODERATE' | 'SEVERE' | 'CRITICAL';
+
+const roleFromPrisma = (v: string): User['role'] =>
+  v.toLowerCase() as User['role'];
+const tierFromPrisma = (v: string): User['subscriptionTier'] =>
+  v.toLowerCase() as User['subscriptionTier'];
+const statusFromPrisma = (v: string): User['subscriptionStatus'] =>
+  v.toLowerCase() as User['subscriptionStatus'];
+const healthFromPrisma = (v: string): Plant['healthStatus'] =>
+  v.toLowerCase() as Plant['healthStatus'];
+const pathogenFromPrisma = (v: string): Diagnosis['pathogenType'] =>
+  v.toLowerCase() as Diagnosis['pathogenType'];
+const severityFromPrisma = (v: string): Diagnosis['severity'] =>
+  v.toLowerCase() as Diagnosis['severity'];
+
+const dateToString = (value: Date | null | undefined): string | undefined =>
+  value ? value.toISOString() : undefined;
+
+function mapUser(u: any): User {
+  return {
+    id: u.id,
+    email: u.email,
+    passwordHash: u.passwordHash,
+    name: u.name,
+    avatarUrl: u.avatarUrl ?? undefined,
+    role: roleFromPrisma(u.role),
+    isEmailVerified: u.isEmailVerified,
+    verificationToken: u.verificationToken ?? undefined,
+    verificationCode: u.verificationCode ?? undefined,
+    verificationCodeExpiresAt: u.verificationCodeExpiresAt?.toISOString(),
+    resetPasswordToken: u.resetPasswordToken ?? undefined,
+    subscriptionTier: tierFromPrisma(u.subscriptionTier),
+    subscriptionStatus: statusFromPrisma(u.subscriptionStatus),
+    subscriptionCurrentPeriodEnd: dateToString(u.subscriptionCurrentPeriodEnd),
+    paymentProvider: u.paymentProvider ?? null,
+    subscriptionId: u.subscriptionId ?? undefined,
+    creditsRemaining: u.creditsRemaining,
+    videoCreditsRemaining: u.videoCreditsRemaining ?? undefined,
+    apiKey: u.apiKey ?? undefined,
+    createdAt: u.createdAt.toISOString(),
+    updatedAt: u.updatedAt.toISOString(),
+  };
+}
+
+function mapPlant(p: any): Plant {
+  return {
+    id: p.id,
+    userId: p.userId,
+    name: p.name,
+    species: p.species,
+    commonName: p.commonName,
+    imageUrl: p.imageUrl,
+    location: p.location as Plant['location'],
+    healthStatus: healthFromPrisma(p.healthStatus),
+    sunlightNeeds: p.sunlightNeeds as Plant['sunlightNeeds'],
+    wateringFrequencyDays: p.wateringFrequencyDays,
+    lastWateredDate: dateToString(p.lastWateredDate),
+    nextWateringDate: dateToString(p.nextWateringDate),
+    notes: p.notes ?? undefined,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+  };
+}
+
+function mapDiagnosis(d: any): Diagnosis {
+  return {
+    id: d.id,
+    userId: d.userId,
+    plantId: d.plantId ?? undefined,
+    mediaType: d.mediaType as Diagnosis['mediaType'],
+    mediaUrl: d.mediaUrl,
+    identifiedSpecies: d.identifiedSpecies,
+    diseaseName: d.diseaseName,
+    pathogenType: pathogenFromPrisma(d.pathogenType),
+    confidence: d.confidence,
+    severity: severityFromPrisma(d.severity),
+    uncertainty: d.uncertainty as Diagnosis['uncertainty'] ?? undefined,
+    symptoms: d.symptoms as string[],
+    causes: d.causes as string[],
+    prognosis: d.prognosis,
+    treatmentSteps: d.treatmentSteps as Diagnosis['treatmentSteps'],
+    organicRemedies: d.organicRemedies as string[],
+    chemicalRemedies: d.chemicalRemedies as Diagnosis['chemicalRemedies'],
+    preventativeMeasures: d.preventativeMeasures as string[],
+    boundingBoxes: d.boundingBoxes
+      ? (d.boundingBoxes as Diagnosis['boundingBoxes'])
+      : undefined,
+    aiProviderUsed: d.aiProviderUsed,
+    modelVersion: d.modelVersion ?? undefined,
+    candidates: d.candidates as Diagnosis['candidates'] ?? undefined,
+    knowledgeReferences: d.knowledgeReferences as Diagnosis['knowledgeReferences'] ?? undefined,
+    adminReviewed: d.adminReviewed,
+    adminAccuracyFeedback: d.adminAccuracyFeedback ?? undefined,
+    createdAt: d.createdAt.toISOString(),
+  };
+}
+
+function mapTimelineEvent(e: any): PlantTimelineEvent {
+  return {
+    id: e.id,
+    plantId: e.plantId,
+    userId: e.userId,
+    eventType: e.eventType as PlantTimelineEvent['eventType'],
+    title: e.title,
+    description: e.description,
+    imageUrl: e.imageUrl ?? undefined,
+    createdAt: e.createdAt.toISOString(),
+  };
+}
+
+function mapCareTask(t: any): CarePlanTask {
+  return {
+    id: t.id,
+    userId: t.userId,
+    plantId: t.plantId ?? undefined,
+    plantName: t.plantName ?? undefined,
+    title: t.title,
+    category: t.category as CarePlanTask['category'],
+    dueDate: t.dueDate.toISOString(),
+    isCompleted: t.isCompleted,
+    notes: t.notes ?? undefined,
+    createdAt: t.createdAt.toISOString(),
+  };
+}
+
+function mapChatMessage(m: any): ChatMessage {
+  return {
+    id: m.id,
+    userId: m.userId,
+    plantId: m.plantId ?? undefined,
+    role: m.role as ChatMessage['role'],
+    content: m.content,
+    mediaUrl: m.mediaUrl ?? undefined,
+    createdAt: m.createdAt.toISOString(),
+  };
+}
+
+function mapKnowledgeItem(k: any): KnowledgeItem {
+  return {
+    id: k.id,
+    type: k.type as KnowledgeItem['type'],
+    name: k.name,
+    scientificName: k.scientificName ?? undefined,
+    commonNames: k.commonNames as KnowledgeItem['commonNames'] ?? undefined,
+    category: k.category ?? undefined,
+    description: k.description ?? undefined,
+    affectedPlants: k.affectedPlants as KnowledgeItem['affectedPlants'] ?? undefined,
+    symptoms: k.symptoms as KnowledgeItem['symptoms'] ?? undefined,
+    treatment: k.treatment as any,
+    prevention: k.prevention as any,
+    sources: k.sources as KnowledgeItem['sources'] ?? undefined,
+    imageUrl: k.imageUrl ?? undefined,
+    metadata: k.metadata as KnowledgeItem['metadata'] ?? undefined,
+    isActive: k.isActive,
+    lastUpdated: k.lastUpdated.toISOString(),
+  };
+}
+
+function mapModelMetadata(m: any): ModelMetadata {
+  return {
+    id: m.id,
+    name: m.name,
+    version: m.version,
+    type: m.type as ModelMetadata['type'],
+    status: m.status as ModelMetadata['status'],
+    description: m.description,
+    trainedOn: m.trainedOn,
+    accuracy: m.accuracy ?? undefined,
+    classes: m.classes as ModelMetadata['classes'] ?? undefined,
+    inputSize: m.inputSize as ModelMetadata['inputSize'] ?? undefined,
+    preprocessing: m.preprocessing as ModelMetadata['preprocessing'] ?? undefined,
+    lastUpdated: m.lastUpdated.toISOString(),
+    license: m.license ?? undefined,
+    citation: m.citation ?? undefined,
+    isActive: m.isActive,
+    registeredAt: m.registeredAt.toISOString(),
+  };
+}
+
+function mapUserFeedback(f: any): UserFeedback {
+  return {
+    id: f.id,
+    userId: f.userId,
+    diagnosisId: f.diagnosisId,
+    wasCorrect: f.wasCorrect,
+    correction: f.correction ?? undefined,
+    notes: f.notes ?? undefined,
+    timestamp: f.timestamp.toISOString(),
+  };
+}
+
+function mapInvoice(i: any): Invoice {
+  return {
+    id: i.id,
+    userId: i.userId,
+    amount: i.amount,
+    currency: i.currency as Invoice['currency'],
+    provider: i.provider as Invoice['provider'],
+    providerPaymentId: i.providerPaymentId,
+    status: i.status as Invoice['status'],
+    plan: i.plan,
+    receiptUrl: i.receiptUrl ?? undefined,
+    createdAt: i.createdAt.toISOString(),
+  };
+}
+
+const globalForStore = globalThis as unknown as {
+  inMemoryStore: {
+    users: User[];
+    plants: Plant[];
+    diagnoses: Diagnosis[];
+    timeline: PlantTimelineEvent[];
+    careTasks: CarePlanTask[];
+    chatMessages: ChatMessage[];
+    knowledge: KnowledgeItem[];
+    modelMetadata: ModelMetadata[];
+    userFeedback: UserFeedback[];
+    invoices: Invoice[];
+  } | undefined;
+};
+
+const store = globalForStore.inMemoryStore ?? {
+  users: [...SEED_USERS],
+  plants: [...SEED_PLANTS],
+  diagnoses: [...SEED_DIAGNOSES],
+  timeline: [...SEED_TIMELINE_EVENTS],
+  careTasks: [...SEED_CARE_TASKS],
+  chatMessages: [],
+  knowledge: [...SEED_KNOWLEDGE_BASE],
+  modelMetadata: [...SEED_MODEL_METADATA],
+  userFeedback: [],
+  invoices: [...SEED_INVOICES],
+};
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForStore.inMemoryStore = store;
+}
+
+const isProd = process.env.NODE_ENV === 'production';
+
+const isPostgres = () => {
+  const url = process.env.DATABASE_URL;
+  return typeof url === 'string' && (url.startsWith('postgres://') || url.startsWith('postgresql://'));
+};
+
+export const db = {
+  users: {
+    async findById(id: string): Promise<User | null> {
+      if (isProd) {
+        const user = await prisma.user.findUnique({ where: { id } });
+        return user ? mapUser(user) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const user = await prisma.user.findUnique({ where: { id } });
+          if (user) return mapUser(user);
+        } catch {}
+      }
+      return store.users.find((u) => u.id === id) ?? null;
+    },
+
+    async findByEmail(email: string): Promise<User | null> {
+      if (isProd) {
+        const user = await prisma.user.findUnique({
+          where: { email: email.toLowerCase().trim() },
+        });
+        return user ? mapUser(user) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: email.toLowerCase().trim() },
+          });
+          if (user) return mapUser(user);
+        } catch {}
+      }
+      return store.users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim()) ?? null;
+    },
+
+    async findByApiKey(apiKey: string): Promise<User | null> {
+      if (!apiKey || apiKey.length < 16) return null;
+      if (isProd) {
+        const user = await prisma.user.findUnique({
+          where: { apiKey },
+        });
+        return user ? mapUser(user) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { apiKey },
+          });
+          if (user) return mapUser(user);
+        } catch {}
+      }
+      return store.users.find((u) => u.apiKey === apiKey) ?? null;
+    },
+
+    async create(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+      const data = {
+        email: user.email.toLowerCase().trim(),
+        passwordHash: user.passwordHash,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        role: roleToPrisma(user.role),
+        isEmailVerified: user.isEmailVerified,
+        verificationToken: user.verificationToken,
+        verificationCode: user.verificationCode,
+        verificationCodeExpiresAt: user.verificationCodeExpiresAt ? new Date(user.verificationCodeExpiresAt) : undefined,
+        resetPasswordToken: user.resetPasswordToken,
+        subscriptionTier: tierToPrisma(user.subscriptionTier),
+        subscriptionStatus: statusToPrisma(user.subscriptionStatus),
+        subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd
+          ? new Date(user.subscriptionCurrentPeriodEnd)
+          : undefined,
+        paymentProvider: user.paymentProvider ?? undefined,
+        subscriptionId: user.subscriptionId,
+        creditsRemaining: user.creditsRemaining,
+        apiKey: user.apiKey,
+      };
+
+      if (isProd) {
+        const created = await prisma.user.create({ data });
+        return mapUser(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.user.create({ data });
+          const mapped = mapUser(created);
+          store.users.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newUser: User = {
+        id: `user_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        updatedAt: now,
+        ...user,
+      };
+      store.users.push(newUser);
+      return newUser;
+    },
+
+    async update(id: string, updates: Partial<User>): Promise<User | null> {
+      const data: any = {};
+
+      if (updates.email !== undefined) data.email = updates.email.toLowerCase().trim();
+      if (updates.passwordHash !== undefined) data.passwordHash = updates.passwordHash;
+      if (updates.name !== undefined) data.name = updates.name;
+      if (updates.avatarUrl !== undefined) data.avatarUrl = updates.avatarUrl;
+      if (updates.role !== undefined) data.role = roleToPrisma(updates.role);
+      if (updates.isEmailVerified !== undefined) data.isEmailVerified = updates.isEmailVerified;
+      if (updates.verificationToken !== undefined) data.verificationToken = updates.verificationToken;
+      if (updates.verificationCode !== undefined) data.verificationCode = updates.verificationCode;
+      if (updates.verificationCodeExpiresAt !== undefined) data.verificationCodeExpiresAt = updates.verificationCodeExpiresAt ? new Date(updates.verificationCodeExpiresAt) : null;
+      if (updates.resetPasswordToken !== undefined) data.resetPasswordToken = updates.resetPasswordToken;
+      if (updates.subscriptionTier !== undefined) data.subscriptionTier = tierToPrisma(updates.subscriptionTier);
+      if (updates.subscriptionStatus !== undefined) data.subscriptionStatus = statusToPrisma(updates.subscriptionStatus);
+      if (updates.subscriptionCurrentPeriodEnd !== undefined) {
+        data.subscriptionCurrentPeriodEnd = updates.subscriptionCurrentPeriodEnd
+          ? new Date(updates.subscriptionCurrentPeriodEnd)
+          : null;
+      }
+      if (updates.paymentProvider !== undefined) data.paymentProvider = updates.paymentProvider;
+      if (updates.subscriptionId !== undefined) data.subscriptionId = updates.subscriptionId;
+      if (updates.creditsRemaining !== undefined) data.creditsRemaining = updates.creditsRemaining;
+      if (updates.apiKey !== undefined) data.apiKey = updates.apiKey;
+
+      if (isProd) {
+        const updated = await prisma.user.update({
+          where: { id },
+          data,
+        });
+        return mapUser(updated);
+      }
+      if (isPostgres()) {
+        try {
+          const updated = await prisma.user.update({
+            where: { id },
+            data,
+          });
+          const mapped = mapUser(updated);
+          const inMemIdx = store.users.findIndex((u) => u.id === id);
+          if (inMemIdx !== -1) {
+            store.users[inMemIdx] = { ...store.users[inMemIdx], ...updates, updatedAt: new Date().toISOString() };
+          }
+          return mapped;
+        } catch {}
+      }
+
+      const inMemIdx = store.users.findIndex((u) => u.id === id);
+      if (inMemIdx === -1) return null;
+      store.users[inMemIdx] = {
+        ...store.users[inMemIdx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      return { ...store.users[inMemIdx] };
+    },
+
+    async listAll(): Promise<User[]> {
+      if (isProd) {
+        const users = await prisma.user.findMany({
+          orderBy: { createdAt: 'desc' },
+        });
+        return users.map(mapUser);
+      }
+      if (isPostgres()) {
+        try {
+          const users = await prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
+          });
+          return users.map(mapUser);
+        } catch {}
+      }
+      return [...store.users];
+    },
+  },
+
+  plants: {
+    async listByUser(userId: string): Promise<Plant[]> {
+      if (isProd) {
+        const plants = await prisma.plant.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return plants.map(mapPlant);
+      }
+      if (isPostgres()) {
+        try {
+          const plants = await prisma.plant.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return plants.map(mapPlant);
+        } catch {}
+      }
+      return store.plants
+        .filter((p) => p.userId === userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    },
+
+    async findById(id: string): Promise<Plant | null> {
+      if (isProd) {
+        const plant = await prisma.plant.findUnique({ where: { id } });
+        return plant ? mapPlant(plant) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const plant = await prisma.plant.findUnique({ where: { id } });
+          if (plant) return mapPlant(plant);
+        } catch {}
+      }
+      return store.plants.find((p) => p.id === id) ?? null;
+    },
+
+    async create(plant: Omit<Plant, 'id' | 'createdAt' | 'updatedAt'>): Promise<Plant> {
+      const data = {
+        userId: plant.userId,
+        name: plant.name,
+        species: plant.species,
+        commonName: plant.commonName,
+        imageUrl: plant.imageUrl,
+        location: plant.location,
+        healthStatus: healthToPrisma(plant.healthStatus),
+        sunlightNeeds: plant.sunlightNeeds,
+        wateringFrequencyDays: plant.wateringFrequencyDays,
+        lastWateredDate: plant.lastWateredDate ? new Date(plant.lastWateredDate) : undefined,
+        nextWateringDate: plant.nextWateringDate ? new Date(plant.nextWateringDate) : undefined,
+        notes: plant.notes,
+      };
+
+      if (isProd) {
+        const created = await prisma.plant.create({ data });
+        return mapPlant(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.plant.create({ data });
+          const mapped = mapPlant(created);
+          store.plants.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newPlant: Plant = {
+        id: `plant_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        updatedAt: now,
+        ...plant,
+      };
+      store.plants.push(newPlant);
+      return newPlant;
+    },
+
+    async update(id: string, updates: Partial<Plant>): Promise<Plant | null> {
+      const data: any = {};
+
+      if (updates.userId !== undefined) data.userId = updates.userId;
+      if (updates.name !== undefined) data.name = updates.name;
+      if (updates.species !== undefined) data.species = updates.species;
+      if (updates.commonName !== undefined) data.commonName = updates.commonName;
+      if (updates.imageUrl !== undefined) data.imageUrl = updates.imageUrl;
+      if (updates.location !== undefined) data.location = updates.location;
+      if (updates.healthStatus !== undefined) data.healthStatus = healthToPrisma(updates.healthStatus);
+      if (updates.sunlightNeeds !== undefined) data.sunlightNeeds = updates.sunlightNeeds;
+      if (updates.wateringFrequencyDays !== undefined) data.wateringFrequencyDays = updates.wateringFrequencyDays;
+      if (updates.lastWateredDate !== undefined) {
+        data.lastWateredDate = updates.lastWateredDate ? new Date(updates.lastWateredDate) : null;
+      }
+      if (updates.nextWateringDate !== undefined) {
+        data.nextWateringDate = updates.nextWateringDate ? new Date(updates.nextWateringDate) : null;
+      }
+      if (updates.notes !== undefined) data.notes = updates.notes;
+
+      if (isProd) {
+        const updated = await prisma.plant.update({
+          where: { id },
+          data,
+        });
+        return mapPlant(updated);
+      }
+      if (isPostgres()) {
+        try {
+          const updated = await prisma.plant.update({
+            where: { id },
+            data,
+          });
+          const mapped = mapPlant(updated);
+          const inMemIdx = store.plants.findIndex((p) => p.id === id);
+          if (inMemIdx !== -1) {
+            store.plants[inMemIdx] = { ...store.plants[inMemIdx], ...updates, updatedAt: new Date().toISOString() };
+          }
+          return mapped;
+        } catch {}
+      }
+
+      const inMemIdx = store.plants.findIndex((p) => p.id === id);
+      if (inMemIdx === -1) return null;
+      store.plants[inMemIdx] = {
+        ...store.plants[inMemIdx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      return { ...store.plants[inMemIdx] };
+    },
+
+    async delete(id: string): Promise<boolean> {
+      if (isProd) {
+        await prisma.plant.delete({ where: { id } });
+        return true;
+      }
+      if (isPostgres()) {
+        try {
+          await prisma.plant.delete({ where: { id } });
+          const inMemIdx = store.plants.findIndex((p) => p.id === id);
+          if (inMemIdx !== -1) store.plants.splice(inMemIdx, 1);
+          return true;
+        } catch {}
+      }
+      const inMemIdx = store.plants.findIndex((p) => p.id === id);
+      if (inMemIdx !== -1) {
+        store.plants.splice(inMemIdx, 1);
+        return true;
+      }
+      return false;
+    },
+  },
+
+  diagnoses: {
+    async listByUser(userId: string): Promise<Diagnosis[]> {
+      if (isProd) {
+        const diagnoses = await prisma.diagnosis.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return diagnoses.map(mapDiagnosis);
+      }
+      if (isPostgres()) {
+        try {
+          const diagnoses = await prisma.diagnosis.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return diagnoses.map(mapDiagnosis);
+        } catch {}
+      }
+      return store.diagnoses
+        .filter((d) => d.userId === userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    },
+
+    async listByPlant(plantId: string): Promise<Diagnosis[]> {
+      if (isProd) {
+        const diagnoses = await prisma.diagnosis.findMany({
+          where: { plantId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return diagnoses.map(mapDiagnosis);
+      }
+      if (isPostgres()) {
+        try {
+          const diagnoses = await prisma.diagnosis.findMany({
+            where: { plantId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return diagnoses.map(mapDiagnosis);
+        } catch {}
+      }
+      return store.diagnoses
+        .filter((d) => d.plantId === plantId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    },
+
+    async findById(id: string): Promise<Diagnosis | null> {
+      if (isProd) {
+        const diagnosis = await prisma.diagnosis.findUnique({ where: { id } });
+        return diagnosis ? mapDiagnosis(diagnosis) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const diagnosis = await prisma.diagnosis.findUnique({ where: { id } });
+          if (diagnosis) return mapDiagnosis(diagnosis);
+        } catch {}
+      }
+      return store.diagnoses.find((d) => d.id === id) ?? null;
+    },
+
+    async create(diagnosis: Omit<Diagnosis, 'id' | 'createdAt'>): Promise<Diagnosis> {
+      const data = {
+        userId: diagnosis.userId,
+        plantId: diagnosis.plantId,
+        mediaType: diagnosis.mediaType,
+        mediaUrl: diagnosis.mediaUrl,
+        identifiedSpecies: diagnosis.identifiedSpecies,
+        diseaseName: diagnosis.diseaseName,
+        pathogenType: pathogenToPrisma(diagnosis.pathogenType),
+        confidence: diagnosis.confidence,
+        severity: severityToPrisma(diagnosis.severity),
+        uncertainty: diagnosis.uncertainty,
+        symptoms: diagnosis.symptoms as any,
+        causes: diagnosis.causes as any,
+        prognosis: diagnosis.prognosis,
+        treatmentSteps: diagnosis.treatmentSteps as any,
+        organicRemedies: diagnosis.organicRemedies as any,
+        chemicalRemedies: diagnosis.chemicalRemedies as any,
+        preventativeMeasures: diagnosis.preventativeMeasures as any,
+        boundingBoxes: diagnosis.boundingBoxes as any,
+        aiProviderUsed: diagnosis.aiProviderUsed,
+        modelVersion: diagnosis.modelVersion,
+        candidates: diagnosis.candidates as any,
+        knowledgeReferences: diagnosis.knowledgeReferences as any,
+        adminReviewed: diagnosis.adminReviewed,
+        adminAccuracyFeedback: diagnosis.adminAccuracyFeedback,
+      };
+
+      if (isProd) {
+        const created = await prisma.diagnosis.create({ data });
+        return mapDiagnosis(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.diagnosis.create({ data });
+          const mapped = mapDiagnosis(created);
+          store.diagnoses.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newDiagnosis: Diagnosis = {
+        id: `diag_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...diagnosis,
+      };
+      store.diagnoses.push(newDiagnosis);
+      return newDiagnosis;
+    },
+
+    async update(id: string, updates: Partial<Diagnosis>): Promise<Diagnosis | null> {
+      const data: any = {};
+
+      if (updates.userId !== undefined) data.userId = updates.userId;
+      if (updates.plantId !== undefined) data.plantId = updates.plantId;
+      if (updates.mediaType !== undefined) data.mediaType = updates.mediaType;
+      if (updates.mediaUrl !== undefined) data.mediaUrl = updates.mediaUrl;
+      if (updates.identifiedSpecies !== undefined) data.identifiedSpecies = updates.identifiedSpecies;
+      if (updates.diseaseName !== undefined) data.diseaseName = updates.diseaseName;
+      if (updates.pathogenType !== undefined) data.pathogenType = pathogenToPrisma(updates.pathogenType);
+      if (updates.confidence !== undefined) data.confidence = updates.confidence;
+      if (updates.severity !== undefined) data.severity = severityToPrisma(updates.severity);
+      if (updates.symptoms !== undefined) data.symptoms = updates.symptoms as any;
+      if (updates.causes !== undefined) data.causes = updates.causes as any;
+      if (updates.prognosis !== undefined) data.prognosis = updates.prognosis;
+      if (updates.treatmentSteps !== undefined) data.treatmentSteps = updates.treatmentSteps as any;
+      if (updates.organicRemedies !== undefined) data.organicRemedies = updates.organicRemedies as any;
+      if (updates.chemicalRemedies !== undefined) data.chemicalRemedies = updates.chemicalRemedies as any;
+      if (updates.preventativeMeasures !== undefined) data.preventativeMeasures = updates.preventativeMeasures as any;
+      if (updates.boundingBoxes !== undefined) data.boundingBoxes = updates.boundingBoxes as any;
+      if (updates.aiProviderUsed !== undefined) data.aiProviderUsed = updates.aiProviderUsed;
+      if (updates.uncertainty !== undefined) data.uncertainty = updates.uncertainty;
+      if (updates.modelVersion !== undefined) data.modelVersion = updates.modelVersion;
+      if (updates.candidates !== undefined) data.candidates = updates.candidates as any;
+      if (updates.knowledgeReferences !== undefined) data.knowledgeReferences = updates.knowledgeReferences as any;
+      if (updates.adminReviewed !== undefined) data.adminReviewed = updates.adminReviewed;
+      if (updates.adminAccuracyFeedback !== undefined) data.adminAccuracyFeedback = updates.adminAccuracyFeedback;
+
+      if (isProd) {
+        const updated = await prisma.diagnosis.update({
+          where: { id },
+          data,
+        });
+        return mapDiagnosis(updated);
+      }
+      if (isPostgres()) {
+        try {
+          const updated = await prisma.diagnosis.update({
+            where: { id },
+            data,
+          });
+          const mapped = mapDiagnosis(updated);
+          const inMemIdx = store.diagnoses.findIndex((d) => d.id === id);
+          if (inMemIdx !== -1) {
+            store.diagnoses[inMemIdx] = { ...store.diagnoses[inMemIdx], ...updates };
+          }
+          return mapped;
+        } catch {}
+      }
+
+      const inMemIdx = store.diagnoses.findIndex((d) => d.id === id);
+      if (inMemIdx === -1) return null;
+      store.diagnoses[inMemIdx] = {
+        ...store.diagnoses[inMemIdx],
+        ...updates,
+      };
+      return { ...store.diagnoses[inMemIdx] };
+    },
+
+    async listAll(): Promise<Diagnosis[]> {
+      if (isProd) {
+        const diagnoses = await prisma.diagnosis.findMany({
+          orderBy: { createdAt: 'desc' },
+        });
+        return diagnoses.map(mapDiagnosis);
+      }
+      if (isPostgres()) {
+        try {
+          const diagnoses = await prisma.diagnosis.findMany({
+            orderBy: { createdAt: 'desc' },
+          });
+          return diagnoses.map(mapDiagnosis);
+        } catch {}
+      }
+      return [...store.diagnoses];
+    },
+  },
+
+  timeline: {
+    async listByPlant(plantId: string): Promise<PlantTimelineEvent[]> {
+      if (isProd) {
+        const events = await prisma.plantTimelineEvent.findMany({
+          where: { plantId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return events.map(mapTimelineEvent);
+      }
+      if (isPostgres()) {
+        try {
+          const events = await prisma.plantTimelineEvent.findMany({
+            where: { plantId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return events.map(mapTimelineEvent);
+        } catch {}
+      }
+      return store.timeline
+        .filter((e) => e.plantId === plantId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    },
+
+    async create(event: Omit<PlantTimelineEvent, 'id' | 'createdAt'>): Promise<PlantTimelineEvent> {
+      const data = {
+        plantId: event.plantId,
+        userId: event.userId,
+        eventType: event.eventType,
+        title: event.title,
+        description: event.description,
+        imageUrl: event.imageUrl,
+      };
+
+      if (isProd) {
+        const created = await prisma.plantTimelineEvent.create({ data });
+        return mapTimelineEvent(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.plantTimelineEvent.create({ data });
+          const mapped = mapTimelineEvent(created);
+          store.timeline.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newEvent: PlantTimelineEvent = {
+        id: `evt_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...event,
+      };
+      store.timeline.push(newEvent);
+      return newEvent;
+    },
+  },
+
+  careTasks: {
+    async listByUser(userId: string): Promise<CarePlanTask[]> {
+      if (isProd) {
+        const tasks = await prisma.carePlanTask.findMany({
+          where: { userId },
+          orderBy: { dueDate: 'asc' },
+        });
+        return tasks.map(mapCareTask);
+      }
+      if (isPostgres()) {
+        try {
+          const tasks = await prisma.carePlanTask.findMany({
+            where: { userId },
+            orderBy: { dueDate: 'asc' },
+          });
+          return tasks.map(mapCareTask);
+        } catch {}
+      }
+      return store.careTasks
+        .filter((t) => t.userId === userId)
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    },
+
+    async findById(id: string): Promise<CarePlanTask | null> {
+      if (isProd) {
+        const task = await prisma.carePlanTask.findUnique({ where: { id } });
+        return task ? mapCareTask(task) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const task = await prisma.carePlanTask.findUnique({ where: { id } });
+          if (task) return mapCareTask(task);
+        } catch {}
+      }
+      return store.careTasks.find((t) => t.id === id) ?? null;
+    },
+
+    async create(task: Omit<CarePlanTask, 'id' | 'createdAt'>): Promise<CarePlanTask> {
+      const data = {
+        userId: task.userId,
+        plantId: task.plantId,
+        plantName: task.plantName,
+        title: task.title,
+        category: task.category,
+        dueDate: new Date(task.dueDate),
+        isCompleted: task.isCompleted,
+        notes: task.notes,
+      };
+
+      if (isProd) {
+        const created = await prisma.carePlanTask.create({ data });
+        return mapCareTask(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.carePlanTask.create({ data });
+          const mapped = mapCareTask(created);
+          store.careTasks.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newTask: CarePlanTask = {
+        id: `task_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...task,
+      };
+      store.careTasks.push(newTask);
+      return newTask;
+    },
+
+    async toggleComplete(id: string): Promise<CarePlanTask | null> {
+      if (isProd) {
+        const task = await prisma.carePlanTask.findUnique({ where: { id } });
+        if (!task) return null;
+        const updated = await prisma.carePlanTask.update({
+          where: { id },
+          data: { isCompleted: !task.isCompleted },
+        });
+        return mapCareTask(updated);
+      }
+      if (isPostgres()) {
+        try {
+          const task = await prisma.carePlanTask.findUnique({ where: { id } });
+          if (task) {
+            const updated = await prisma.carePlanTask.update({
+              where: { id },
+              data: { isCompleted: !task.isCompleted },
+            });
+            const mapped = mapCareTask(updated);
+            const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+            if (inMemIdx !== -1) {
+              store.careTasks[inMemIdx].isCompleted = mapped.isCompleted;
+            }
+            return mapped;
+          }
+        } catch {}
+      }
+      const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+      if (inMemIdx === -1) return null;
+      store.careTasks[inMemIdx].isCompleted = !store.careTasks[inMemIdx].isCompleted;
+      return { ...store.careTasks[inMemIdx] };
+    },
+
+    async delete(id: string): Promise<boolean> {
+      if (isProd) {
+        await prisma.carePlanTask.delete({ where: { id } });
+        return true;
+      }
+      if (isPostgres()) {
+        try {
+          await prisma.carePlanTask.delete({ where: { id } });
+          const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+          if (inMemIdx !== -1) store.careTasks.splice(inMemIdx, 1);
+          return true;
+        } catch {}
+      }
+      const inMemIdx = store.careTasks.findIndex((t) => t.id === id);
+      if (inMemIdx !== -1) {
+        store.careTasks.splice(inMemIdx, 1);
+        return true;
+      }
+      return false;
+    },
+  },
+
+  chatMessages: {
+    async listByUser(userId: string, plantId?: string): Promise<ChatMessage[]> {
+      if (isProd) {
+        const messages = await prisma.chatMessage.findMany({
+          where: {
+            userId,
+            ...(plantId ? { plantId } : {}),
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        return messages.map(mapChatMessage);
+      }
+      if (isPostgres()) {
+        try {
+          const messages = await prisma.chatMessage.findMany({
+            where: {
+              userId,
+              ...(plantId ? { plantId } : {}),
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+          return messages.map(mapChatMessage);
+        } catch {}
+      }
+      return store.chatMessages
+        .filter((m) => m.userId === userId && (!plantId || m.plantId === plantId))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    },
+
+    async create(msg: Omit<ChatMessage, 'id' | 'createdAt'>): Promise<ChatMessage> {
+      const data = {
+        userId: msg.userId,
+        plantId: msg.plantId,
+        role: msg.role,
+        content: msg.content,
+        mediaUrl: msg.mediaUrl,
+      };
+
+      if (isProd) {
+        const created = await prisma.chatMessage.create({ data });
+        return mapChatMessage(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.chatMessage.create({ data });
+          const mapped = mapChatMessage(created);
+          store.chatMessages.push(mapped);
+          return mapped;
+        } catch {}
+      }
+
+      const now = new Date().toISOString();
+      const newMsg: ChatMessage = {
+        id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...msg,
+      };
+      store.chatMessages.push(newMsg);
+      return newMsg;
+    },
+  },
+
+  knowledge: {
+    async listAll(): Promise<KnowledgeItem[]> {
+      if (isProd) {
+        const items = await prisma.knowledgeItem.findMany({
+          where: { isActive: true },
+          orderBy: { lastUpdated: 'desc' },
+        });
+        return items.map(mapKnowledgeItem);
+      }
+      if (isPostgres()) {
+        try {
+          const items = await prisma.knowledgeItem.findMany({
+            where: { isActive: true },
+            orderBy: { lastUpdated: 'desc' },
+          });
+          if (items?.length) return items.map(mapKnowledgeItem);
+        } catch {}
+      }
+      return store.knowledge.filter((k) => k.isActive);
+    },
+
+    async getByScientificName(scientificName: string): Promise<KnowledgeItem | null> {
+      if (isProd) {
+        const item = await prisma.knowledgeItem.findUnique({ 
+          where: { scientificName, isActive: true } 
+        });
+        return item ? mapKnowledgeItem(item) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const item = await prisma.knowledgeItem.findUnique({ 
+            where: { scientificName, isActive: true } 
+          });
+          if (item) return mapKnowledgeItem(item);
+        } catch {}
+      }
+      return store.knowledge.find(
+        (k) =>
+          k.scientificName?.toLowerCase() === scientificName.toLowerCase() &&
+          k.isActive
+      ) ?? null;
+    },
+
+    async search(query: string, type?: string): Promise<KnowledgeItem[]> {
+      const q = query.toLowerCase();
+
+      if (isProd) {
+        const whereClause: any = { isActive: true };
+        if (type) whereClause.type = type;
+
+        const items = await prisma.knowledgeItem.findMany({
+          where: whereClause,
+        });
+
+        return (items.map(mapKnowledgeItem) as KnowledgeItem[]).filter(
+          (k: KnowledgeItem) =>
+            k.name.toLowerCase().includes(q) ||
+            (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
+            (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
+            (k.description && k.description.toLowerCase().includes(q))
+        );
+      }
+
+      if (isPostgres()) {
+        try {
+          const whereClause: any = { isActive: true };
+          if (type) whereClause.type = type;
+
+          const items = await prisma.knowledgeItem.findMany({
+            where: whereClause,
+          });
+
+          if (items?.length) {
+            return (items.map(mapKnowledgeItem) as KnowledgeItem[]).filter(
+              (k: KnowledgeItem) =>
+                k.name.toLowerCase().includes(q) ||
+                (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
+                (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
+                (k.description && k.description.toLowerCase().includes(q))
+            );
+          }
+        } catch {}
+      }
+
+      return store.knowledge.filter((k) => {
+        if (!k.isActive) return false;
+        if (type && k.type !== type) return false;
+        return (
+          k.name.toLowerCase().includes(q) ||
+          (k.scientificName && k.scientificName.toLowerCase().includes(q)) ||
+          (k.commonNames && k.commonNames.some((n: string) => n.toLowerCase().includes(q))) ||
+          (k.description && k.description.toLowerCase().includes(q))
+        );
+      });
+    },
+  },
+
+  modelMetadata: {
+    async listAll(): Promise<ModelMetadata[]> {
+      if (isProd) {
+        const models = await prisma.modelMetadata.findMany({
+          orderBy: { registeredAt: 'desc' },
+        });
+        return models.map(mapModelMetadata);
+      }
+      if (isPostgres()) {
+        try {
+          const models = await prisma.modelMetadata.findMany({
+            orderBy: { registeredAt: 'desc' },
+          });
+          if (models?.length) return models.map(mapModelMetadata);
+        } catch {}
+      }
+      return [...store.modelMetadata];
+    },
+
+    async getActive(modelType: string): Promise<ModelMetadata | null> {
+      if (isProd) {
+        const model = await prisma.modelMetadata.findFirst({
+          where: { 
+            type: modelType as any,
+            isActive: true,
+            status: 'active' as any
+          },
+        });
+        return model ? mapModelMetadata(model) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const model = await prisma.modelMetadata.findFirst({
+            where: { 
+              type: modelType as any,
+              isActive: true,
+              status: 'active' as any
+            },
+          });
+          if (model) return mapModelMetadata(model);
+        } catch {}
+      }
+      return (
+        store.modelMetadata.find(
+          (m) => m.type === modelType && m.isActive && m.status === 'active'
+        ) ?? null
+      );
+    },
+
+    async setActive(id: string): Promise<ModelMetadata | null> {
+      if (isProd) {
+        const target = await prisma.modelMetadata.findUnique({ where: { id } });
+        if (!target) return null;
+        await prisma.$transaction([
+          prisma.modelMetadata.updateMany({
+            where: { type: target.type as any },
+            data: { isActive: false },
+          }),
+          prisma.modelMetadata.update({
+            where: { id },
+            data: { isActive: true, status: 'active' as any },
+          }),
+        ]);
+
+        const updated = await prisma.modelMetadata.findUnique({ where: { id } });
+        return updated ? mapModelMetadata(updated) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const target = await prisma.modelMetadata.findUnique({ where: { id } });
+          if (target) {
+            await prisma.$transaction([
+              prisma.modelMetadata.updateMany({
+                where: { type: target.type as any },
+                data: { isActive: false },
+              }),
+              prisma.modelMetadata.update({
+                where: { id },
+                data: { isActive: true, status: 'active' as any },
+              }),
+            ]);
+
+            const updated = await prisma.modelMetadata.findUnique({ where: { id } });
+            if (updated) return mapModelMetadata(updated);
+          }
+        } catch {}
+      }
+      const target = store.modelMetadata.find((m) => m.id === id);
+      if (!target) return null;
+      store.modelMetadata.forEach((m) => {
+        if (m.type === target.type) m.isActive = false;
+      });
+      target.isActive = true;
+      target.status = 'active';
+      return { ...target };
+    },
+
+    async create(model: Omit<ModelMetadata, 'id'>): Promise<ModelMetadata> {
+      const data = {
+        name: model.name,
+        version: model.version,
+        type: model.type,
+        status: model.status,
+        description: model.description,
+        trainedOn: model.trainedOn,
+        accuracy: model.accuracy,
+        classes: model.classes as any,
+        inputSize: model.inputSize as any,
+        preprocessing: model.preprocessing as any,
+        license: model.license,
+        citation: model.citation,
+        isActive: model.isActive,
+        registeredAt: new Date(model.registeredAt),
+      };
+
+      if (isProd) {
+        const created = await prisma.modelMetadata.create({ data });
+        return mapModelMetadata(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.modelMetadata.create({ data });
+          return mapModelMetadata(created);
+        } catch {}
+      }
+      const newModel: ModelMetadata = {
+        ...model,
+        id: `mdl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      };
+      store.modelMetadata.push(newModel);
+      return newModel;
+    },
+  },
+
+  models: {
+    listAll(): Promise<ModelMetadata[]> {
+      return db.modelMetadata.listAll();
+    },
+    getActive(modelType: string): Promise<ModelMetadata | null> {
+      return db.modelMetadata.getActive(modelType);
+    },
+    setActive(id: string): Promise<ModelMetadata | null> {
+      return db.modelMetadata.setActive(id);
+    },
+    create(model: Omit<ModelMetadata, 'id'>): Promise<ModelMetadata> {
+      return db.modelMetadata.create(model);
+    },
+  },
+
+  userFeedback: {
+    async listByUser(userId: string): Promise<UserFeedback[]> {
+      if (isProd) {
+        const feedback = await prisma.userFeedback.findMany({
+          where: { userId },
+          orderBy: { timestamp: 'desc' },
+        });
+        return feedback.map(mapUserFeedback);
+      }
+      if (isPostgres()) {
+        try {
+          const feedback = await prisma.userFeedback.findMany({
+            where: { userId },
+            orderBy: { timestamp: 'desc' },
+          });
+          return feedback.map(mapUserFeedback);
+        } catch {}
+      }
+      return store.userFeedback.filter((f) => f.userId === userId);
+    },
+
+    async getByDiagnosis(diagnosisId: string): Promise<UserFeedback | null> {
+      if (isProd) {
+        const feedback = await prisma.userFeedback.findUnique({
+          where: { diagnosisId },
+        });
+        return feedback ? mapUserFeedback(feedback) : null;
+      }
+      if (isPostgres()) {
+        try {
+          const feedback = await prisma.userFeedback.findUnique({
+            where: { diagnosisId },
+          });
+          if (feedback) return mapUserFeedback(feedback);
+        } catch {}
+      }
+      return store.userFeedback.find((f) => f.diagnosisId === diagnosisId) ?? null;
+    },
+
+    async create(feedback: Omit<UserFeedback, 'id'>): Promise<UserFeedback> {
+      const data = {
+        userId: feedback.userId,
+        diagnosisId: feedback.diagnosisId,
+        wasCorrect: feedback.wasCorrect,
+        correction: feedback.correction,
+        notes: feedback.notes,
+        timestamp: new Date(feedback.timestamp),
+      };
+
+      if (isProd) {
+        const created = await prisma.userFeedback.create({ data });
+        return mapUserFeedback(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.userFeedback.create({ data });
+          return mapUserFeedback(created);
+        } catch {}
+      }
+      const newFeedback: UserFeedback = { ...feedback, id: `fb_${Date.now()}` };
+      store.userFeedback.push(newFeedback);
+      return newFeedback;
+    },
+  },
+
+  invoices: {
+    async listByUser(userId: string): Promise<Invoice[]> {
+      if (isProd) {
+        const invoices = await prisma.invoice.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return invoices.map(mapInvoice);
+      }
+      if (isPostgres()) {
+        try {
+          const invoices = await prisma.invoice.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+          });
+          return invoices.map(mapInvoice);
+        } catch {}
+      }
+      return store.invoices.filter((i) => i.userId === userId);
+    },
+
+    async create(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<Invoice> {
+      const data = {
+        userId: invoice.userId,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        provider: invoice.provider,
+        providerPaymentId: invoice.providerPaymentId,
+        status: invoice.status,
+        plan: invoice.plan,
+        receiptUrl: invoice.receiptUrl,
+      };
+
+      if (isProd) {
+        const created = await prisma.invoice.create({ data });
+        return mapInvoice(created);
+      }
+      if (isPostgres()) {
+        try {
+          const created = await prisma.invoice.create({ data });
+          const mapped = mapInvoice(created);
+          store.invoices.push(mapped);
+          return mapped;
+        } catch {}
+      }
+      const now = new Date().toISOString();
+      const newInvoice: Invoice = {
+        id: `inv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        ...invoice,
+      };
+      store.invoices.push(newInvoice);
+      return newInvoice;
+    },
+  },
+};
+
+
+
+===== FILE: src/lib/db/prisma.ts =====
+import { PrismaClient } from '@prisma/client';
+
+let prisma: any;
+
+try {
+  const globalForPrisma = globalThis as unknown as {
+    prisma: PrismaClient | undefined;
+  };
+
+  prisma =
+    globalForPrisma.prisma ??
+    new PrismaClient();
+
+  if (process.env.NODE_ENV !== 'production') {
+    globalForPrisma.prisma = prisma;
+  }
+} catch {
+  console.warn('[AI Studio] Database not connected â€” using mock');
+  const noOp = {
+    findMany: async () => [],
+    findFirst: async () => null,
+    findUnique: async () => null,
+    create: async (d: any) => d?.data ?? {},
+    update: async (d: any) => d?.data ?? {},
+    delete: async () => ({}),
+  };
+  prisma = new Proxy({}, { get: () => noOp });
+}
+
+export { prisma };
+
+
+
+===== FILE: src/lib/env.ts =====
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+  JWT_SECRET: z.string().min(32),
+  DATABASE_URL: z.string().min(1),
+  AI_PROVIDER: z.enum(['gemini', 'openai', 'custom', 'mock']).default('mock'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  CUSTOM_INFERENCE_URL: z.string().optional(),
+  CUSTOM_INFERENCE_API_KEY: z.string().optional(),
+
+  NEXT_PUBLIC_RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+
+  STORAGE_PROVIDER: z.enum(['local', 's3', 'r2', 'supabase']).default('local'),
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(),
+  S3_ACCESS_KEY: z.string().optional(),
+  S3_SECRET_KEY: z.string().optional(),
+  NEXT_PUBLIC_STORAGE_PUBLIC_URL: z.string().optional(),
+
+  EMAIL_PROVIDER: z.enum(['mock', 'resend', 'smtp']).default('mock'),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('Plantinia Doctor <notifications@plantinia.app>'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:support@plantinia.app'),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+function validateEnv(): Env {
+  const raw = { ...process.env, NODE_ENV: process.env.NODE_ENV || 'development' };
+  const result = envSchema.safeParse(raw);
+
+  if (result.success) {
+    const value = result.data;
+    if (value.NODE_ENV === 'production') {
+      if (value.AI_PROVIDER === 'mock') throw new Error('AI_PROVIDER=mock is not allowed in production');
+      if (value.AI_PROVIDER === 'gemini' && !value.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is required when AI_PROVIDER=gemini');
+      if (value.AI_PROVIDER === 'openai' && !value.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is required when AI_PROVIDER=openai');
+      if (value.AI_PROVIDER === 'custom' && !value.CUSTOM_INFERENCE_URL) throw new Error('CUSTOM_INFERENCE_URL is required when AI_PROVIDER=custom');
+      if (value.EMAIL_PROVIDER === 'mock') throw new Error('EMAIL_PROVIDER=mock is not allowed in production');
+      if (value.EMAIL_PROVIDER === 'smtp' && (!value.SMTP_HOST || !value.SMTP_USER || !value.SMTP_PASSWORD)) throw new Error('SMTP configuration is required in production');
+      if (value.EMAIL_PROVIDER === 'resend' && !value.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required in production');
+      if (value.STORAGE_PROVIDER === 'local') throw new Error('STORAGE_PROVIDER=local is not allowed in production; use S3, R2, or Supabase storage');
+    }
+    return value;
+  }
+
+  if (process.env.NODE_ENV === 'production') throw new Error(`Invalid production environment configuration: ${result.error.message}`);
+
+  return envSchema.parse({
+    ...raw,
+    JWT_SECRET: process.env.JWT_SECRET || 'plantinia-local-development-secret-change-me-32',
+    DATABASE_URL: process.env.DATABASE_URL || 'file:./dev.db',
+  });
+}
+
+export const env = validateEnv();
+
+
+===== FILE: src/lib/payments/entitlements.ts =====
+import { User } from '../db/schema';
+import { db } from '../db/adapter';
+import { SUBSCRIPTION_PLANS, SubscriptionTier, getPlan } from './types';
+
+export interface EntitlementCheckResult {
+  allowed: boolean;
+  reason?: string;
+  remainingCredits?: number;
+  remainingVideoCredits?: number;
+}
+
+export async function checkAndDeductDiagnosisEntitlement(
+  user: User,
+  mediaType: 'image' | 'video' = 'image'
+): Promise<EntitlementCheckResult> {
+  const tier: SubscriptionTier = (user.subscriptionTier as SubscriptionTier) || 'free';
+  const plan = getPlan(tier);
+
+  // Pro & Farm have unlimited image & video diagnoses
+  if (plan.creditsPerMonth === 'unlimited') {
+    return { allowed: true };
+  }
+
+  // Video Diagnosis Quota Checks
+  if (mediaType === 'video') {
+    if (plan.videoCreditsPerMonth === 0) {
+      return {
+        allowed: false,
+        reason: `AI Video Diagnosis is exclusive to Plant Doctor (10 scans/mo), Pro, and Commercial plans. Upgrade from ${plan.name} to analyze plant videos.`,
+      };
+    }
+
+    // Plant Doctor has 10 video scans per month
+    const videoCredits = user.videoCreditsRemaining ?? (typeof plan.videoCreditsPerMonth === 'number' ? plan.videoCreditsPerMonth : 0);
+    if (videoCredits <= 0) {
+      return {
+        allowed: false,
+        reason: `You have used all ${plan.videoCreditsPerMonth} monthly video scans included in ${plan.name}. Upgrade to Pro Plant Doctor for unlimited video diagnoses.`,
+        remainingVideoCredits: 0,
+      };
+    }
+
+    const updatedVideoCredits = videoCredits - 1;
+    await db.users.update(user.id, { videoCreditsRemaining: updatedVideoCredits });
+
+    return {
+      allowed: true,
+      remainingVideoCredits: updatedVideoCredits,
+    };
+  }
+
+  // Leaf / Image Diagnosis Quota Checks
+  if (user.creditsRemaining <= 0) {
+    let upgradeSuggestion = 'Upgrade to Plant Care (â‚¹49) or Plant Doctor (â‚¹139) for more scans.';
+    if (tier === 'care') {
+      upgradeSuggestion = 'Upgrade to Plant Doctor (â‚¹139) for 60 scans or Pro (â‚¹399) for unlimited scans.';
+    } else if (tier === 'doctor') {
+      upgradeSuggestion = 'Upgrade to Pro Plant Doctor (â‚¹399) for unlimited scans.';
+    }
+
+    return {
+      allowed: false,
+      reason: `You have used all ${plan.creditsPerMonth} monthly AI diagnosis scans on the ${plan.name} plan. ${upgradeSuggestion}`,
+      remainingCredits: 0,
+    };
+  }
+
+  // Deduct 1 credit for metered tiers (free, care, doctor)
+  const updatedCredits = user.creditsRemaining - 1;
+  await db.users.update(user.id, { creditsRemaining: updatedCredits });
+
+  return {
+    allowed: true,
+    remainingCredits: updatedCredits,
+  };
+}
+
+export async function checkPlantTrackingEntitlement(user: User): Promise<EntitlementCheckResult> {
+  const tier: SubscriptionTier = (user.subscriptionTier as SubscriptionTier) || 'free';
+  const plan = getPlan(tier);
+
+  if (plan.maxTrackedPlants === 'unlimited') {
+    return { allowed: true };
+  }
+
+  const existingPlants = await db.plants.listByUser(user.id);
+  if (existingPlants.length >= plan.maxTrackedPlants) {
+    let nextPlanAdvice = 'Plant Care (â‚¹49/mo, up to 10 plants)';
+    if (tier === 'care') {
+      nextPlanAdvice = 'Plant Doctor (â‚¹139/mo, up to 30 plants)';
+    } else if (tier === 'doctor') {
+      nextPlanAdvice = 'Pro Plant Doctor (â‚¹399/mo, unlimited plants)';
+    }
+
+    return {
+      allowed: false,
+      reason: `You have reached your garden capacity limit of ${plan.maxTrackedPlants} plants for ${plan.name}. Upgrade to ${nextPlanAdvice} to track more specimens.`,
+    };
+  }
+
+  return { allowed: true };
+}
+
+export function canAccessChat(user: User): { allowed: boolean; mode: 'basic' | 'advanced'; reason?: string } {
+  const tier: SubscriptionTier = (user.subscriptionTier as SubscriptionTier) || 'free';
+  if (tier === 'free') {
+    return {
+      allowed: true,
+      mode: 'basic',
+    };
+  }
+  if (tier === 'care') {
+    return {
+      allowed: true,
+      mode: 'basic',
+    };
+  }
+  return {
+    allowed: true,
+    mode: 'advanced',
+  };
+}
+
+export function canExportPdfReport(user: User): boolean {
+  const tier: SubscriptionTier = (user.subscriptionTier as SubscriptionTier) || 'free';
+  return tier === 'doctor' || tier === 'pro' || tier === 'farm';
+}
+
+export function canAccessAdmin(user: User): boolean {
+  return user.role === 'admin';
+}
+
+
+
+===== FILE: src/lib/payments/razorpay.ts =====
+import { env } from '../env';
+
+export interface RazorpayOrderResponse {
+  id: string;
+  amount: number;
+  currency: string;
+  receipt: string;
+  status: string;
+}
+
+export async function createRazorpayOrder(
+  amountInINR: number,
+  receiptId: string,
+  notes: Record<string, string> = {}
+): Promise<RazorpayOrderResponse> {
+  const keyId = env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+  const keySecret = env.RAZORPAY_KEY_SECRET;
+
+  if (!keyId || !keySecret || keyId === 'rzp_test_sample') {
+    if (env.NODE_ENV === 'production') {
+      throw new Error('Razorpay is not configured for production');
+    }
+    return {
+      id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      amount: amountInINR * 100,
+      currency: 'INR',
+      receipt: receiptId,
+      status: 'created',
+    };
+  }
+
+  const auth = btoa(`${keyId}:${keySecret}`);
+  const res = await fetch('https://api.razorpay.com/v1/orders', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${auth}`,
+    },
+    body: JSON.stringify({
+      amount: Math.round(amountInINR * 100),
+      currency: 'INR',
+      receipt: receiptId,
+      notes,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Razorpay Order creation failed: ${errorText}`);
+  }
+
+  return await res.json();
+}
+
+export async function verifyRazorpaySignature(
+  orderId: string,
+  paymentId: string,
+  signature: string
+): Promise<boolean> {
+  if (!orderId || !paymentId || !signature) return false;
+
+  const keySecret = env.RAZORPAY_KEY_SECRET;
+  if (!keySecret || keySecret === 'sample_secret') {
+    if (env.NODE_ENV === 'production') {
+      console.error('CRITICAL: Razorpay secret is not configured in production');
+      return false;
+    }
+    return orderId.startsWith('order_mock_');
+  }
+
+  const body = `${orderId}|${paymentId}`;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(keySecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const sigBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(body));
+  const hex = Array.from(new Uint8Array(sigBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  if (hex.length !== signature.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < hex.length; i++) {
+    diff |= hex.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+
+===== FILE: src/lib/payments/stripe.ts =====
+import { env } from '../env';
+import { SubscriptionTier, getPlan } from './types';
+
+export async function createStripeCheckoutSession(params: {
+  userId: string;
+  userEmail: string;
+  tier: SubscriptionTier;
+  amountUSD: number;
+  planName?: string;
+  successUrl: string;
+  cancelUrl: string;
+}): Promise<{ url: string; sessionId: string }> {
+  const secretKey = env.STRIPE_SECRET_KEY;
+  const plan = getPlan(params.tier);
+  const displayName = params.planName || plan.name;
+
+  // Mock checkout is allowed only outside production. Production must use Stripe.
+  if (!secretKey || secretKey === 'sk_test_sample') {
+    if (env.NODE_ENV === 'production') {
+      throw new Error('Stripe is not configured for production');
+    }
+    const sep = params.successUrl.includes('?') ? '&' : '?';
+    const sessionId = `mock_cs_${params.tier}_${Date.now()}`;
+    return {
+      url: `${params.successUrl}${sep}session_id=${sessionId}`,
+      sessionId,
+    };
+  }
+
+  const formData = new URLSearchParams();
+  formData.append('mode', 'subscription');
+  formData.append('customer_email', params.userEmail);
+  formData.append('client_reference_id', params.userId);
+  formData.append('success_url', params.successUrl);
+  formData.append('cancel_url', params.cancelUrl);
+  formData.append('metadata[userId]', params.userId);
+  formData.append('metadata[tier]', plan.id);
+  formData.append('metadata[priceUSD]', plan.priceUSD.toString());
+  formData.append('subscription_data[metadata][userId]', params.userId);
+  formData.append('subscription_data[metadata][tier]', plan.id);
+  formData.append('line_items[0][price_data][currency]', 'usd');
+  formData.append('line_items[0][price_data][product_data][name]', `Plantinia ${displayName}`);
+  formData.append('line_items[0][price_data][unit_amount]', Math.round(plan.priceUSD * 100).toString());
+  formData.append('line_items[0][price_data][recurring][interval]', 'month');
+  formData.append('line_items[0][quantity]', '1');
+
+  const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: formData.toString(),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Stripe session creation failed: ${errorText}`);
+  }
+
+  const data = await res.json();
+  if (!data.id || !data.url) {
+    throw new Error('Stripe returned an invalid checkout session');
+  }
+
+  return {
+    url: data.url,
+    sessionId: data.id,
+  };
+}
+
+
+===== FILE: src/lib/payments/types.ts =====
+export type SubscriptionTier = 'free' | 'care' | 'doctor' | 'pro' | 'farm';
+
+export interface PlanPricing {
+  id: SubscriptionTier;
+  name: string;
+  badge?: string;
+  priceINR: number;
+  priceUSD: number;
+  period: 'month' | 'forever';
+  description: string;
+  ctaText: string;
+  creditsPerMonth: number | 'unlimited';
+  videoCreditsPerMonth: number | 'unlimited';
+  maxTrackedPlants: number | 'unlimited';
+  features: string[];
+  razorpayPlanId?: string;
+  stripePriceId?: string;
+}
+
+export const SUBSCRIPTION_TIER_ORDER: SubscriptionTier[] = [
+  'free',
+  'care',
+  'doctor',
+  'pro',
+  'farm',
+];
+
+export const SUBSCRIPTION_PLANS: Record<SubscriptionTier, PlanPricing> = {
+  free: {
+    id: 'free',
+    name: 'Starter Gardener',
+    priceINR: 0,
+    priceUSD: 0,
+    period: 'forever',
+    description: 'Essential diagnosis for houseplant hobbyists.',
+    ctaText: 'Get Started Free',
+    creditsPerMonth: 5,
+    videoCreditsPerMonth: 0,
+    maxTrackedPlants: 4,
+    features: [
+      '5 AI leaf scans every month',
+      'Basic organic & home recipes',
+      'Track up to 4 plants',
+      'Plant disease encyclopedia',
+    ],
+  },
+  care: {
+    id: 'care',
+    name: 'Plant Care',
+    badge: 'Affordable Care',
+    priceINR: 49,
+    priceUSD: 0.99,
+    period: 'month',
+    description: 'Everyday AI-powered care for growing plant collections.',
+    ctaText: 'Start Plant Care',
+    creditsPerMonth: 20,
+    videoCreditsPerMonth: 0,
+    maxTrackedPlants: 10,
+    features: [
+      '20 AI leaf scans every month',
+      'Basic disease & pest identification',
+      'Basic AI plant-care chat',
+      'Track up to 10 plants',
+      'Organic & home remedies',
+      'Plant disease encyclopedia',
+      'Basic weather-aware recommendations',
+    ],
+  },
+  doctor: {
+    id: 'doctor',
+    name: 'Plant Doctor',
+    badge: 'Best Value',
+    priceINR: 139,
+    priceUSD: 1.99,
+    period: 'month',
+    description: 'Advanced diagnosis and care for serious plant enthusiasts.',
+    ctaText: 'Become a Plant Doctor',
+    creditsPerMonth: 60,
+    videoCreditsPerMonth: 10,
+    maxTrackedPlants: 30,
+    features: [
+      '60 AI leaf scans every month',
+      '10 AI video scans every month',
+      'Advanced Dr. Flora AI Doctor chat',
+      'Track up to 30 plants',
+      'Detailed AI diagnosis reports',
+      'Weather & microclimate insights',
+      'Care plans and reminders',
+      'Plant disease & pest encyclopedia',
+      'Printable PDF health reports',
+    ],
+  },
+  pro: {
+    id: 'pro',
+    name: 'Pro Plant Doctor',
+    badge: 'Most Popular',
+    priceINR: 399,
+    priceUSD: 4.99,
+    period: 'month',
+    description: 'Unlimited AI diagnoses and 24/7 doctor chat.',
+    ctaText: 'Upgrade to Pro',
+    creditsPerMonth: 'unlimited',
+    videoCreditsPerMonth: 'unlimited',
+    maxTrackedPlants: 'unlimited',
+    features: [
+      'Unlimited AI leaf & video scans',
+      '24/7 Dr. Flora AI Doctor chat',
+      'Unlimited plant collection tracking',
+      'Microclimate weather & frost warnings',
+      'Export printable health reports (PDF)',
+    ],
+  },
+  farm: {
+    id: 'farm',
+    name: 'Commercial Nursery',
+    badge: 'Commercial',
+    priceINR: 1999,
+    priceUSD: 24.99,
+    period: 'month',
+    description: 'For greenhouses, nurseries, and agronomists.',
+    ctaText: 'Choose Commercial',
+    creditsPerMonth: 'unlimited',
+    videoCreditsPerMonth: 'unlimited',
+    maxTrackedPlants: 'unlimited',
+    features: [
+      'Everything in Pro included',
+      'REST API Access Keys for sensors',
+      'Multi-acre batch scanning & plots',
+      'Download annotated COCO / YOLO data',
+    ],
+  },
+};
+
+export function getPlan(tier: string | undefined): PlanPricing {
+  if (!tier || !(tier in SUBSCRIPTION_PLANS)) {
+    return SUBSCRIPTION_PLANS.free;
+  }
+  return SUBSCRIPTION_PLANS[tier as SubscriptionTier];
+}
+
+
+
+===== FILE: src/lib/storage/index.ts =====
+import { env } from '../env';
+
+export interface IStorageProvider {
+  uploadFile(
+    fileBuffer: Buffer | Uint8Array,
+    filename: string,
+    mimeType: string
+  ): Promise<string>;
+  deleteFile(fileUrl: string): Promise<void>;
+}
+
+class LocalStorageProvider implements IStorageProvider {
+  async uploadFile(
+    fileBuffer: Buffer | Uint8Array,
+    filename: string,
+    mimeType: string
+  ): Promise<string> {
+    const base64 = Buffer.from(fileBuffer).toString('base64');
+    return `data:${mimeType};base64,${base64}`;
+  }
+
+  async deleteFile(_fileUrl: string): Promise<void> {
+    // No-op for in-memory data URIs
+  }
+}
+
+class S3CompatibleStorageProvider implements IStorageProvider {
+  async uploadFile(
+    fileBuffer: Buffer | Uint8Array,
+    filename: string,
+    mimeType: string
+  ): Promise<string> {
+    const bucket = env.S3_BUCKET || 'plantinia';
+    const endpoint = env.S3_ENDPOINT;
+    const cleanFilename = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+
+    if (!endpoint) {
+      const base64 = Buffer.from(fileBuffer).toString('base64');
+      return `data:${mimeType};base64,${base64}`;
+    }
+
+    const uploadUrl = `${endpoint}/${bucket}/${cleanFilename}`;
+
+    const body = new Uint8Array(fileBuffer);
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': mimeType,
+      },
+      body,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Storage upload failed: ${res.status}`);
+    }
+
+    return env.NEXT_PUBLIC_STORAGE_PUBLIC_URL
+      ? `${env.NEXT_PUBLIC_STORAGE_PUBLIC_URL}/${cleanFilename}`
+      : uploadUrl;
+  }
+
+  async deleteFile(fileUrl: string): Promise<void> {
+    try {
+      await fetch(fileUrl, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete file from storage', e);
+    }
+  }
+}
+
+export function getStorageProvider(): IStorageProvider {
+  if (env.STORAGE_PROVIDER === 's3' || env.STORAGE_PROVIDER === 'r2') {
+    return new S3CompatibleStorageProvider();
+  }
+
+  return new LocalStorageProvider();
+}
+
+
+===== FILE: src\app\api\admin\datasets\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    const datasets = [
+      {
+        id: 'ds_solanaceae_blight_2026',
+        name: 'Solanaceae Leaf Blight & Canker Master Set',
+        format: 'YOLOv8 / PyTorch',
+        imagesCount: 38450,
+        classes: ['healthy', 'early_blight', 'late_blight', 'bacterial_canker', 'septoria'],
+        sizeMB: 1420,
+        license: 'CC-BY-4.0',
+        lastUpdated: '2026-09-01T10:00:00Z',
+      },
+      {
+        id: 'ds_aroid_houseplants_2026',
+        name: 'Indoor Aroids & Tropical Pests Detection',
+        format: 'COCO JSON + Images',
+        imagesCount: 22100,
+        classes: ['thrips', 'spider_mites', 'mealybugs', 'edema', 'chlorosis'],
+        sizeMB: 980,
+        license: 'Plantinia Commercial AI License',
+        lastUpdated: '2026-08-20T14:30:00Z',
+      },
+      {
+        id: 'ds_citrus_pathology_2026',
+        name: 'Citrus Greening & Melanose Diagnostic Archive',
+        format: 'Pascal VOC / TFRecord',
+        imagesCount: 15600,
+        classes: ['citrus_canker', 'greening_hlb', 'black_spot', 'scab'],
+        sizeMB: 760,
+        license: 'Plantinia Commercial AI License',
+        lastUpdated: '2026-07-15T09:15:00Z',
+      },
+    ];
+
+    return NextResponse.json({ datasets });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\admin\feedback\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    const { diagnosisId, feedback } = await req.json();
+    if (!diagnosisId || !['accurate', 'inaccurate'].includes(feedback)) {
+      return NextResponse.json({ error: 'Valid diagnosisId and feedback required' }, { status: 400 });
+    }
+
+    const updated = await db.diagnoses.update(diagnosisId, {
+      adminReviewed: true,
+      adminAccuracyFeedback: feedback,
+    });
+
+    if (!updated) {
+      return NextResponse.json({ error: 'Diagnosis not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, diagnosis: updated });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\admin\models\[id]\activate\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    const activated = await db.models.setActive(params.id);
+    if (!activated) {
+      return NextResponse.json({ error: 'Model version not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Model ${activated.name} (v${activated.version}) is now active in production`,
+      model: activated,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\admin\models\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    const models = await db.models.listAll();
+    return NextResponse.json({ models });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\admin\stats\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+import { getPlan } from '@/lib/payments/types';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || user.role !== 'admin') return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+
+    const allUsers = await db.users.listAll();
+    const allDiagnoses = await db.diagnoses.listAll();
+    const allModels = await db.models.listAll();
+
+    const paidUsers = allUsers.filter((u) => u.subscriptionTier !== 'free' && u.subscriptionStatus === 'active');
+    const estimatedMRR = paidUsers.reduce((sum, u) => sum + getPlan(u.subscriptionTier).priceINR, 0);
+
+    const accurateCount = allDiagnoses.filter((d) => d.adminAccuracyFeedback === 'accurate').length;
+    const inaccurateCount = allDiagnoses.filter((d) => d.adminAccuracyFeedback === 'inaccurate').length;
+    const totalReviewed = accurateCount + inaccurateCount;
+    const accuracyRate = totalReviewed > 0 ? Number(((accurateCount / totalReviewed) * 100).toFixed(1)) : null;
+
+    const activeModel = allModels.find((m) => m.status === 'active');
+
+    return NextResponse.json({
+      stats: {
+        totalScans: allDiagnoses.length,
+        totalUsers: allUsers.length,
+        activeSubscribers: paidUsers.length,
+        monthlyRecurringRevenueINR: estimatedMRR,
+        overallAccuracyRate: accuracyRate === null ? null : `${accuracyRate}%`,
+        reviewedDiagnoses: totalReviewed,
+        activeModel: activeModel?.name || null,
+      },
+      recentDiagnoses: allDiagnoses.slice(0, 10),
+    });
+  } catch (error: any) {
+    console.error('Admin stats error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\auth\login\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { db } from '@/lib/db/adapter';
+import { verifyPassword, dummyVerifyPassword } from '@/lib/auth/session';
+import { signJWT } from '@/lib/auth/jwt';
+import { env } from '@/lib/env';
+import { checkRateLimit, getClientIp, resetRateLimit } from '@/lib/auth/rate-limit';
+
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address').max(254, 'Email too long').transform((e) => e.toLowerCase().trim()),
+  password: z.string().min(1, 'Password is required').max(128, 'Password must not exceed 128 characters'),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const ip = getClientIp(req);
+    const body = await req.json();
+    const result = loginSchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error.errors[0].message },
+        { status: 400 }
+      );
+    }
+
+    const { email, password } = result.data;
+
+    // Rate limiting: brute-force mitigation per IP and per account
+    const ipRateCheck = checkRateLimit(`login-ip:${ip}`, 15, 900000);
+    const emailRateCheck = checkRateLimit(`login-email:${email}`, 5, 900000);
+
+    if (!ipRateCheck.allowed || !emailRateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many failed login attempts. Please wait 15 minutes before trying again.' },
+        { status: 429 }
+      );
+    }
+
+    const user = await db.users.findByEmail(email);
+
+    if (!user) {
+      // Execute constant-time dummy verification to protect against account enumeration via timing
+      await dummyVerifyPassword();
+      return NextResponse.json(
+        { error: 'Invalid email or password' },
+        { status: 401 }
+      );
+    }
+
+    const isMatch = await verifyPassword(password, user.passwordHash);
+    if (!isMatch) {
+      return NextResponse.json(
+        { error: 'Invalid email or password' },
+        { status: 401 }
+      );
+    }
+
+    if (!user.isEmailVerified) {
+      return NextResponse.json(
+        {
+          error: 'Please verify your email before signing in',
+          requiresEmailVerification: true,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Reset rate limits on successful authentication
+    resetRateLimit(`login-email:${email}`);
+    resetRateLimit(`login-ip:${ip}`);
+
+    const token = await signJWT({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      subscriptionTier: user.subscriptionTier,
+    });
+
+    const response = NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        subscriptionTier: user.subscriptionTier,
+        creditsRemaining: user.creditsRemaining,
+        isEmailVerified: user.isEmailVerified,
+        avatarUrl: user.avatarUrl,
+      },
+      token,
+    });
+
+    response.cookies.set('plantinia_token', token, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60,
+      path: '/',
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error('Login error:', error);
+    const errorMessage = env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred during login.'
+      : (error.message || 'Internal server error');
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+
+===== FILE: src\app\api\auth\logout\route.ts =====
+import { NextResponse } from 'next/server';
+import { env } from '@/lib/env';
+
+export async function POST() {
+  const response = NextResponse.json({ success: true });
+  response.cookies.set('plantinia_token', '', {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 0,
+    expires: new Date(0),
+    path: '/',
+  });
+  return response;
+}
+
+
+===== FILE: src\app\api\auth\me\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        subscriptionTier: user.subscriptionTier,
+        subscriptionStatus: user.subscriptionStatus,
+        creditsRemaining: user.creditsRemaining,
+        isEmailVerified: user.isEmailVerified,
+        avatarUrl: user.avatarUrl,
+        apiKey: user.apiKey,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\auth\signup\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { randomInt } from 'crypto';
+import { db } from '@/lib/db/adapter';
+import { hashPassword } from '@/lib/auth/session';
+import { getEmailProvider, generateVerificationEmailHtml } from '@/lib/email';
+import { env } from '@/lib/env';
+import { checkRateLimit, getClientIp } from '@/lib/auth/rate-limit';
+
+const signupSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name must not exceed 100 characters'),
+  email: z.string().email('Invalid email address').max(254, 'Email must not exceed 254 characters').transform((e) => e.toLowerCase().trim()),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password must not exceed 128 characters'),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(`signup:${ip}`, 10, 3600000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many signup attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    const body = await req.json();
+    const result = signupSchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error.errors[0].message },
+        { status: 400 }
+      );
+    }
+
+    const { name, email, password } = result.data;
+    const existingUser = await db.users.findByEmail(email);
+
+    if (existingUser) {
+      if (existingUser.isEmailVerified) {
+        return NextResponse.json(
+          { error: 'An account with this email already exists' },
+          { status: 409 }
+        );
+      }
+
+      const verificationCode = randomInt(100000, 1000000).toString();
+      const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await db.users.update(existingUser.id, {
+        name,
+        passwordHash: await hashPassword(password),
+        verificationCode,
+        verificationCodeExpiresAt: verificationCodeExpiresAt.toISOString(),
+      });
+
+      const emailProvider = getEmailProvider();
+
+      const emailSent = await emailProvider.sendEmail({
+        to: email,
+        subject: 'Verify your Plantinia Account ðŸŒ¿',
+        html: generateVerificationEmailHtml(name, verificationCode),
+      });
+
+      if (!emailSent) {
+        return NextResponse.json(
+          { error: 'We could not send the verification email. Please try again later.' },
+          { status: 503 }
+        );
+      }
+
+      return NextResponse.json({
+        user: {
+          id: existingUser.id,
+          name,
+          email: existingUser.email,
+          isEmailVerified: false,
+        },
+        message: 'A new verification code has been sent to your email.',
+        requiresEmailVerification: true,
+      });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const verificationCode = randomInt(100000, 1000000).toString();
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    const newUser = await db.users.create({
+      name,
+      email,
+      passwordHash,
+      role: 'user',
+      isEmailVerified: false,
+      verificationCode,
+      verificationCodeExpiresAt: verificationCodeExpiresAt.toISOString(),
+      subscriptionTier: 'free',
+      subscriptionStatus: 'active',
+      creditsRemaining: 5,
+      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+    });
+
+    const emailProvider = getEmailProvider();
+
+    const emailSent = await emailProvider.sendEmail({
+      to: email,
+      subject: 'Verify your Plantinia Account ðŸŒ¿',
+      html: generateVerificationEmailHtml(name, verificationCode),
+    });
+
+    if (!emailSent) {
+      return NextResponse.json(
+        { error: 'We could not send the verification email. Please try again later.' },
+        { status: 503 }
+      );
+    }
+
+    // Do NOT issue a full session token/cookie to unverified users.
+    // The user must verify their email with the 6-digit code before session issuance.
+    return NextResponse.json(
+      {
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          subscriptionTier: newUser.subscriptionTier,
+          creditsRemaining: newUser.creditsRemaining,
+          isEmailVerified: false,
+        },
+        message: 'Registration successful. Please verify your email with the 6-digit code sent to your inbox.',
+        requiresEmailVerification: true,
+      },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error('Signup error:', error);
+    const errorMessage = env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred during registration.'
+      : (error.message || 'Internal server error');
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+
+===== FILE: src\app\api\auth\verify-email\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db/adapter';
+import { signJWT } from '@/lib/auth/jwt';
+import { env } from '@/lib/env';
+import { checkRateLimit, getClientIp, resetRateLimit } from '@/lib/auth/rate-limit';
+
+export async function POST(req: NextRequest) {
+  try {
+    const ip = getClientIp(req);
+    const { email, code } = await req.json();
+
+    if (!email || !code) {
+      return NextResponse.json(
+        { error: 'Email and verification code are required' },
+        { status: 400 }
+      );
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const verificationCode = String(code).trim();
+
+    // Brute-force protection: max 5 code attempts per 10 minutes
+    const rateCheck = checkRateLimit(`verify-email:${normalizedEmail}`, 5, 600000);
+    const ipRateCheck = checkRateLimit(`verify-email-ip:${ip}`, 15, 600000);
+    if (!rateCheck.allowed || !ipRateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many incorrect verification attempts. Please wait 10 minutes or request a new code.' },
+        { status: 429 }
+      );
+    }
+
+    if (!/^\d{6}$/.test(verificationCode)) {
+      return NextResponse.json(
+        { error: 'Verification code must be 6 digits' },
+        { status: 400 }
+      );
+    }
+
+    const user = await db.users.findByEmail(normalizedEmail);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Invalid verification request' },
+        { status: 400 }
+      );
+    }
+
+    if (user.isEmailVerified) {
+      const token = await signJWT({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        subscriptionTier: user.subscriptionTier,
+      });
+
+      const response = NextResponse.json({
+        success: true,
+        message: 'Email is already verified.',
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          subscriptionTier: user.subscriptionTier,
+          creditsRemaining: user.creditsRemaining,
+          isEmailVerified: true,
+          avatarUrl: user.avatarUrl,
+        },
+      });
+
+      response.cookies.set('plantinia_token', token, {
+        httpOnly: true,
+        secure: env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60,
+        path: '/',
+      });
+
+      return response;
+    }
+
+    if (!user.verificationCode || !user.verificationCodeExpiresAt) {
+      return NextResponse.json(
+        { error: 'No active verification code. Please request a new code.' },
+        { status: 400 }
+      );
+    }
+
+    const expiresAt = new Date(user.verificationCodeExpiresAt);
+
+    if (expiresAt.getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'Verification code has expired. Please request a new code.' },
+        { status: 400 }
+      );
+    }
+
+    if (user.verificationCode !== verificationCode) {
+      return NextResponse.json(
+        { error: 'Incorrect verification code' },
+        { status: 400 }
+      );
+    }
+
+    // Reset rate limit on success
+    resetRateLimit(`verify-email:${normalizedEmail}`);
+
+    const updatedUser = await db.users.update(user.id, {
+      isEmailVerified: true,
+      verificationCode: undefined,
+      verificationCodeExpiresAt: undefined,
+      verificationToken: undefined,
+    });
+
+    const token = await signJWT({
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      role: updatedUser.role,
+      subscriptionTier: updatedUser.subscriptionTier,
+    });
+
+    const response = NextResponse.json({
+      success: true,
+      message: 'Email successfully verified! Welcome to Plantinia.',
+      token,
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        subscriptionTier: updatedUser.subscriptionTier,
+        creditsRemaining: updatedUser.creditsRemaining,
+        isEmailVerified: true,
+        avatarUrl: updatedUser.avatarUrl,
+      },
+    });
+
+    response.cookies.set('plantinia_token', token, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60,
+      path: '/',
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error('Email verification error:', error);
+    const errorMessage = env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred during email verification.'
+      : (error.message || 'Internal server error');
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+
+===== FILE: src\app\api\billing\create-order\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { SUBSCRIPTION_PLANS, SubscriptionTier } from '@/lib/payments/types';
+import { createRazorpayOrder } from '@/lib/payments/razorpay';
+import { env } from '@/lib/env';
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { tier } = await req.json();
+    const plan = SUBSCRIPTION_PLANS[tier as SubscriptionTier];
+
+    if (!plan || plan.priceINR <= 0) {
+      return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 });
+    }
+
+    const receipt = `rcpt_${user.id}_${tier}_${Date.now()}`;
+    const order = await createRazorpayOrder(plan.priceINR, receipt, {
+      userId: user.id,
+      tier,
+    });
+
+    return NextResponse.json({
+      order,
+      keyId: env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_sample',
+      plan,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\billing\plans\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { SUBSCRIPTION_PLANS, SUBSCRIPTION_TIER_ORDER, SubscriptionTier } from '@/lib/payments/types';
+import { db } from '@/lib/db/adapter';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    const plans = SUBSCRIPTION_TIER_ORDER.map((tier) => SUBSCRIPTION_PLANS[tier]);
+
+    if (!user) {
+      return NextResponse.json({
+        plans,
+        currentTier: 'free',
+        creditsRemaining: 5,
+        videoCreditsRemaining: 0,
+        plantsCount: 0,
+        invoices: [],
+      });
+    }
+
+    const invoices = await db.invoices.listByUser(user.id);
+    const userPlants = await db.plants.listByUser(user.id);
+
+    return NextResponse.json({
+      plans,
+      currentTier: user.subscriptionTier,
+      subscriptionStatus: user.subscriptionStatus,
+      subscriptionCurrentPeriodEnd: user.subscriptionCurrentPeriodEnd,
+      creditsRemaining: user.creditsRemaining,
+      videoCreditsRemaining:
+        user.videoCreditsRemaining ??
+        (user.subscriptionTier === 'doctor'
+          ? 10
+          : user.subscriptionTier === 'pro' || user.subscriptionTier === 'farm'
+          ? 9999
+          : 0),
+      plantsCount: userPlants.length,
+      invoices,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+
+===== FILE: src\app\api\billing\stripe-checkout\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { SUBSCRIPTION_PLANS, SubscriptionTier } from '@/lib/payments/types';
+import { createStripeCheckoutSession } from '@/lib/payments/stripe';
+import { env } from '@/lib/env';
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { tier } = await req.json();
+    const plan = SUBSCRIPTION_PLANS[tier as SubscriptionTier];
+
+    if (!plan || plan.priceUSD <= 0) {
+      return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 });
+    }
+
+    const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const session = await createStripeCheckoutSession({
+      userId: user.id,
+      userEmail: user.email,
+      tier: plan.id,
+      planName: plan.name,
+      amountUSD: plan.priceUSD,
+      successUrl: `${appUrl}/billing?status=success&tier=${plan.id}`,
+      cancelUrl: `${appUrl}/billing?status=cancelled`,
+    });
+
+    return NextResponse.json({ url: session.url });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\billing\verify-payment\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { verifyRazorpaySignature } from '@/lib/payments/razorpay';
+import { SUBSCRIPTION_PLANS, SubscriptionTier, getPlan } from '@/lib/payments/types';
+import { db } from '@/lib/db/adapter';
+import { env } from '@/lib/env';
+
+function isValidTier(value: unknown): value is SubscriptionTier {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SUBSCRIPTION_PLANS, value) && value !== 'free';
+}
+
+async function fetchRazorpayOrder(orderId: string): Promise<any | null> {
+  const keyId = env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+  const keySecret = env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret || orderId.startsWith('order_mock_')) return null;
+
+  const auth = btoa(`${keyId}:${keySecret}`);
+  const response = await fetch(`https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`, {
+    headers: { Authorization: `Basic ${auth}` },
+    cache: 'no-store',
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function fetchStripeSession(sessionId: string): Promise<any | null> {
+  const secretKey = env.STRIPE_SECRET_KEY;
+  if (!secretKey || sessionId.startsWith('mock_cs_')) return null;
+
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+    headers: { Authorization: `Bearer ${secretKey}` },
+    cache: 'no-store',
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await req.json();
+    const provider = body.provider === 'stripe' ? 'stripe' : 'razorpay';
+    const tier = body.tier;
+
+    if (!isValidTier(tier)) {
+      return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 });
+    }
+    const plan = getPlan(tier);
+
+    let paymentRef = '';
+    let subscriptionId = '';
+
+    if (provider === 'razorpay') {
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return NextResponse.json({ error: 'Razorpay payment details are required' }, { status: 400 });
+      }
+
+      if (!(await verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature))) {
+        return NextResponse.json({ error: 'Invalid payment signature verification' }, { status: 400 });
+      }
+
+      const order = await fetchRazorpayOrder(razorpay_order_id);
+      if (order) {
+        const expectedAmount = Math.round(plan.priceINR * 100);
+        const notes = order.notes || {};
+        if (order.amount !== expectedAmount || order.currency !== 'INR' || notes.userId !== user.id || notes.tier !== tier) {
+          return NextResponse.json({ error: 'Payment does not match the selected account or plan' }, { status: 400 });
+        }
+      } else if (env.NODE_ENV === 'production') {
+        return NextResponse.json({ error: 'Unable to verify Razorpay order with the payment provider' }, { status: 502 });
+      }
+
+      paymentRef = razorpay_payment_id;
+      subscriptionId = razorpay_order_id;
+    } else {
+      const { stripe_session_id } = body;
+      if (!stripe_session_id) return NextResponse.json({ error: 'Stripe session ID is required' }, { status: 400 });
+
+      const session = await fetchStripeSession(stripe_session_id);
+      if (!session) {
+        if (env.NODE_ENV === 'production') {
+          return NextResponse.json({ error: 'Unable to verify Stripe checkout session' }, { status: 502 });
+        }
+      } else {
+        const metadata = session.metadata || {};
+        const paid = session.payment_status === 'paid' || session.status === 'complete';
+        const expectedAmount = Math.round(plan.priceUSD * 100);
+        const actualAmount = session.amount_total;
+        if (!paid || session.mode !== 'subscription' || session.client_reference_id !== user.id || metadata.userId !== user.id || metadata.tier !== tier || actualAmount !== expectedAmount) {
+          return NextResponse.json({ error: 'Stripe payment does not match the selected account or plan' }, { status: 400 });
+        }
+        subscriptionId = session.subscription || stripe_session_id;
+      }
+
+      paymentRef = stripe_session_id;
+    }
+
+    const invoice = {
+      userId: user.id,
+      amount: provider === 'stripe' ? plan.priceUSD : plan.priceINR,
+      currency: provider === 'stripe' ? 'USD' : 'INR',
+      provider,
+      providerPaymentId: paymentRef,
+      status: 'paid' as const,
+      plan: plan.name,
+      receiptUrl: `#receipt-${paymentRef}`,
+    };
+
+    // Claim the provider payment before granting credits. The database unique constraint
+    // on (provider, providerPaymentId) makes repeated webhook/client callbacks idempotent.
+    try {
+      await db.invoices.create(invoice);
+    } catch (error: any) {
+      const message = String(error?.message || '').toLowerCase();
+      if (message.includes('unique') || message.includes('duplicate')) {
+        const currentUser = await db.users.findById(user.id);
+        return NextResponse.json({ success: true, message: 'Payment was already processed.', user: currentUser });
+      }
+      throw error;
+    }
+
+    const periodEnd = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    const creditsToSet = plan.creditsPerMonth === 'unlimited' ? 9999 : plan.creditsPerMonth;
+    const videoCreditsToSet = plan.videoCreditsPerMonth === 'unlimited' ? 9999 : plan.videoCreditsPerMonth;
+
+    const updatedUser = await db.users.update(user.id, {
+      subscriptionTier: plan.id,
+      subscriptionStatus: 'active',
+      subscriptionCurrentPeriodEnd: periodEnd,
+      paymentProvider: provider,
+      subscriptionId,
+      creditsRemaining: creditsToSet,
+      videoCreditsRemaining: videoCreditsToSet,
+    });
+
+    if (!updatedUser) return NextResponse.json({ error: 'User account could not be updated' }, { status: 500 });
+
+    return NextResponse.json({
+      success: true,
+      message: `Upgraded to ${plan.name} successfully!`,
+      user: updatedUser,
+    });
+  } catch (error: any) {
+    console.error('Payment verification error:', error);
+    return NextResponse.json({ error: env.NODE_ENV === 'production' ? 'Payment verification failed' : error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\billing\webhooks\razorpay\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db/adapter';
+import { SubscriptionTier, getPlan, SUBSCRIPTION_PLANS } from '@/lib/payments/types';
+import { env } from '@/lib/env';
+
+async function verifyRazorpayWebhookSignature(rawBody: string, signature: string | null): Promise<boolean> {
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || env.RAZORPAY_KEY_SECRET;
+  if (!webhookSecret || webhookSecret === 'sample_secret') {
+    if (env.NODE_ENV === 'production') {
+      console.error('CRITICAL: Razorpay webhook secret is not configured in production');
+      return false;
+    }
+    return true;
+  }
+  if (!signature) return false;
+
+  try {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(webhookSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sigBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+    const expected = Array.from(new Uint8Array(sigBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    if (expected.length !== signature.length) return false;
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+    return diff === 0;
+  } catch {
+    return false;
+  }
+}
+
+function validTier(value: unknown): value is SubscriptionTier {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SUBSCRIPTION_PLANS, value) && value !== 'free';
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const rawBody = await req.text();
+    if (!(await verifyRazorpayWebhookSignature(rawBody, req.headers.get('x-razorpay-signature')))) {
+      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
+    }
+
+    let event: any;
+    try { event = JSON.parse(rawBody); } catch { return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 }); }
+
+    if (event.event === 'order.paid' || event.event === 'payment.captured') {
+      const paymentEntity = event.payload?.payment?.entity || {};
+      const notes = paymentEntity.notes || {};
+      const userId = notes.userId;
+      const tierValue = notes.tier;
+
+      if (!userId || !validTier(tierValue)) {
+        return NextResponse.json({ error: 'Webhook is missing valid account or plan metadata' }, { status: 400 });
+      }
+
+      const tier = tierValue as SubscriptionTier;
+      const plan = getPlan(tier);
+      const expectedAmount = Math.round(plan.priceINR * 100);
+      if (paymentEntity.amount !== expectedAmount || paymentEntity.currency !== 'INR' || paymentEntity.status !== 'captured') {
+        return NextResponse.json({ error: 'Webhook payment does not match the configured plan' }, { status: 400 });
+      }
+
+      const user = await db.users.findById(userId);
+      if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+
+      const paymentRef = String(paymentEntity.id || '');
+      if (!paymentRef) return NextResponse.json({ error: 'Missing Razorpay payment ID' }, { status: 400 });
+
+      try {
+        await db.invoices.create({
+          userId: user.id,
+          amount: plan.priceINR,
+          currency: 'INR',
+          provider: 'razorpay',
+          providerPaymentId: paymentRef,
+          status: 'paid',
+          plan: plan.name,
+          receiptUrl: `#receipt-${paymentRef}`,
+        });
+      } catch (error: any) {
+        const message = String(error?.message || '').toLowerCase();
+        if (message.includes('unique') || message.includes('duplicate')) return NextResponse.json({ status: 'ok', duplicate: true });
+        throw error;
+      }
+
+      await db.users.update(user.id, {
+        subscriptionTier: plan.id,
+        subscriptionStatus: 'active',
+        subscriptionCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        paymentProvider: 'razorpay',
+        subscriptionId: paymentEntity.order_id || paymentEntity.id,
+        creditsRemaining: plan.creditsPerMonth === 'unlimited' ? 9999 : plan.creditsPerMonth,
+        videoCreditsRemaining: plan.videoCreditsPerMonth === 'unlimited' ? 9999 : plan.videoCreditsPerMonth,
+      });
+    }
+
+    return NextResponse.json({ status: 'ok' });
+  } catch (error: any) {
+    console.error('Razorpay webhook error:', error);
+    return NextResponse.json({ error: env.NODE_ENV === 'production' ? 'Webhook processing failed' : error.message }, { status: 400 });
+  }
+}
+
+
+===== FILE: src\app\api\billing\webhooks\stripe\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db/adapter';
+import { SubscriptionTier, getPlan, SUBSCRIPTION_PLANS } from '@/lib/payments/types';
+import { env } from '@/lib/env';
+
+async function verifyStripeWebhookSignature(rawBody: string, signatureHeader: string | null): Promise<boolean> {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    if (env.NODE_ENV === 'production') {
+      console.error('CRITICAL: Stripe webhook secret is not configured in production');
+      return false;
+    }
+    return true;
+  }
+  if (!signatureHeader) return false;
+
+  try {
+    let timestamp = '';
+    const signatures: string[] = [];
+    for (const item of signatureHeader.split(',')) {
+      const [key, value] = item.split('=');
+      if (key === 't') timestamp = value;
+      if (key === 'v1' && value) signatures.push(value);
+    }
+    const timestampNumber = Number(timestamp);
+    if (!timestamp || !Number.isFinite(timestampNumber) || Math.abs(Math.floor(Date.now() / 1000) - timestampNumber) > 300) return false;
+
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(webhookSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const signature = await crypto.subtle.sign('HMAC', key, enc.encode(`${timestamp}.${rawBody}`));
+    const expectedHex = Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    return signatures.some((candidate) => {
+      if (candidate.length !== expectedHex.length) return false;
+      let diff = 0;
+      for (let i = 0; i < candidate.length; i++) diff |= candidate.charCodeAt(i) ^ expectedHex.charCodeAt(i);
+      return diff === 0;
+    });
+  } catch {
+    return false;
+  }
+}
+
+function validTier(value: unknown): value is SubscriptionTier {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SUBSCRIPTION_PLANS, value) && value !== 'free';
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const rawBody = await req.text();
+    if (!(await verifyStripeWebhookSignature(rawBody, req.headers.get('stripe-signature')))) {
+      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
+    }
+
+    let event: any;
+    try { event = JSON.parse(rawBody); } catch { return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 }); }
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data?.object || {};
+      const metadata = session.metadata || {};
+      const userId = session.client_reference_id;
+      const tierValue = metadata.tier;
+
+      if (!userId || metadata.userId !== userId || !validTier(tierValue)) {
+        return NextResponse.json({ error: 'Webhook is missing valid account or plan metadata' }, { status: 400 });
+      }
+
+      const tier = tierValue as SubscriptionTier;
+      const plan = getPlan(tier);
+      const expectedAmount = Math.round(plan.priceUSD * 100);
+      if (session.mode !== 'subscription' || session.payment_status !== 'paid' || session.amount_total !== expectedAmount) {
+        return NextResponse.json({ error: 'Webhook payment does not match the configured plan' }, { status: 400 });
+      }
+
+      const user = await db.users.findById(userId);
+      if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+
+      const paymentRef = String(session.id || '');
+      if (!paymentRef) return NextResponse.json({ error: 'Missing Stripe session ID' }, { status: 400 });
+
+      try {
+        await db.invoices.create({
+          userId: user.id,
+          amount: plan.priceUSD,
+          currency: 'USD',
+          provider: 'stripe',
+          providerPaymentId: paymentRef,
+          status: 'paid',
+          plan: plan.name,
+          receiptUrl: session.customer_details?.receipt_url || `#receipt-${paymentRef}`,
+        });
+      } catch (error: any) {
+        const message = String(error?.message || '').toLowerCase();
+        if (message.includes('unique') || message.includes('duplicate')) return NextResponse.json({ received: true, duplicate: true });
+        throw error;
+      }
+
+      await db.users.update(user.id, {
+        subscriptionTier: plan.id,
+        subscriptionStatus: 'active',
+        subscriptionCurrentPeriodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        paymentProvider: 'stripe',
+        subscriptionId: session.subscription || session.id,
+        creditsRemaining: plan.creditsPerMonth === 'unlimited' ? 9999 : plan.creditsPerMonth,
+        videoCreditsRemaining: plan.videoCreditsPerMonth === 'unlimited' ? 9999 : plan.videoCreditsPerMonth,
+      });
+    }
+
+    return NextResponse.json({ received: true });
+  } catch (error: any) {
+    console.error('Stripe webhook error:', error);
+    return NextResponse.json({ error: env.NODE_ENV === 'production' ? 'Webhook processing failed' : error.message }, { status: 400 });
+  }
+}
+
+
+===== FILE: src\app\api\chat\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { getAIEngine } from '@/lib/ai';
+import { db } from '@/lib/db/adapter';
+import { canAccessChat } from '@/lib/payments/entitlements';
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const chatAccess = canAccessChat(user);
+
+    const { messages, plantId } = await req.json();
+    if (!messages || !Array.isArray(messages)) {
+      return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
+    }
+
+    let plantContext: any = undefined;
+    if (plantId) {
+      const plant = await db.plants.findById(plantId);
+      if (plant) {
+        const diagnoses = await db.diagnoses.listByPlant(plant.id);
+        plantContext = {
+          name: plant.name,
+          species: plant.species,
+          healthStatus: plant.healthStatus,
+          recentDiagnosis: diagnoses[0]?.diseaseName,
+        };
+      }
+    }
+
+    const aiEngine = getAIEngine();
+    const chatResult = await aiEngine.chatWithDoctor({
+      messages,
+      plantContext,
+    });
+
+    // Persist messages if user is logged in
+    const lastUserMsg = messages[messages.length - 1];
+    if (lastUserMsg && lastUserMsg.role === 'user') {
+      await db.chatMessages.create({
+        userId: user.id,
+        plantId: plantId || undefined,
+        role: 'user',
+        content: lastUserMsg.content,
+      });
+    }
+
+    await db.chatMessages.create({
+      userId: user.id,
+      plantId: plantId || undefined,
+      role: 'assistant',
+      content: chatResult.response,
+    });
+
+    return NextResponse.json({
+      response: chatResult.response,
+      suggestedFollowUps: chatResult.suggestedFollowUps,
+      aiProviderUsed: chatResult.aiProviderUsed,
+      chatMode: chatAccess.mode,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plantId = req.nextUrl.searchParams.get('plantId') || undefined;
+    const history = await db.chatMessages.listByUser(user.id, plantId);
+    return NextResponse.json({ messages: history });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\cron\reminders\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db/adapter';
+import { getEmailProvider } from '@/lib/email';
+import { getPlantWeatherAdvisory } from '@/lib/weather/open-meteo';
+
+export async function GET(req: NextRequest) {
+  try {
+    const authHeader = req.headers.get('authorization');
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (process.env.NODE_ENV === 'production') {
+      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+        return NextResponse.json({ error: 'Unauthorized cron trigger' }, { status: 401 });
+      }
+    } else if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'Unauthorized cron trigger' }, { status: 401 });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const users = await db.users.listAll();
+    const weather = await getPlantWeatherAdvisory();
+    const emailProvider = getEmailProvider();
+
+    let processedCount = 0;
+
+    for (const user of users) {
+      const userTasks = await db.careTasks.listByUser(user.id);
+      const pendingToday = userTasks.filter((t) => !t.isCompleted && t.dueDate <= todayStr);
+
+      if (pendingToday.length > 0) {
+        processedCount++;
+        const taskListHtml = pendingToday
+          .map((t) => `<li><strong>${t.category.toUpperCase()}:</strong> ${t.title}</li>`)
+          .join('');
+
+        const weatherNote = weather.frostAlert
+          ? '<p style="color: #dc2626; font-weight: bold;">âš ï¸ Frost Warning: Bring tropical plants indoors!</p>'
+          : weather.fungalRisk === 'high'
+          ? '<p style="color: #d97706;">âš ï¸ High fungal risk: Avoid evening leaf spraying.</p>'
+          : '';
+
+        await emailProvider.sendEmail({
+          to: user.email,
+          subject: `ðŸŒ± Your Daily Plantinia Garden Digest (${pendingToday.length} tasks today)`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+              <h2 style="color: #059669;">Good morning, ${user.name}!</h2>
+              ${weatherNote}
+              <h3>Today's Plant Care Tasks:</h3>
+              <ul>${taskListHtml}</ul>
+              <p><a href="https://plantinia.app/care-plans" style="color: #059669; font-weight: bold;">Open Plantinia Dashboard</a></p>
+            </div>
+          `,
+        });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      digestsDispatched: processedCount,
+      weatherAlert: weather.frostAlert || weather.heatAlert,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\diagnose\[id]\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const diagnosis = await db.diagnoses.findById(params.id);
+    if (!diagnosis || (diagnosis.userId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'Diagnosis not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ diagnosis });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\diagnose\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { getAIEngine } from '@/lib/ai';
+import { checkAndDeductDiagnosisEntitlement } from '@/lib/payments/entitlements';
+import { db } from '@/lib/db/adapter';
+
+export async function POST(req: NextRequest) {
+  let currentUser: Awaited<ReturnType<typeof getSessionUser>> = null;
+  let mediaType: 'image' | 'video' = 'image';
+  let originalImageCredits: number | undefined;
+  let originalVideoCredits: number | undefined;
+  let deducted = false;
+
+  try {
+    currentUser = await getSessionUser(req);
+    if (!currentUser) return NextResponse.json({ error: 'Please login or create a free account to diagnose plants' }, { status: 401 });
+
+    const body = await req.json();
+    const { mediaUrl, plantId, plantSpeciesHint, notes } = body;
+    mediaType = body.mediaType || 'image';
+    if (!mediaUrl) return NextResponse.json({ error: 'Plant image or video media is required' }, { status: 400 });
+    if (mediaType !== 'image' && mediaType !== 'video') return NextResponse.json({ error: 'Invalid media type' }, { status: 400 });
+    if (typeof mediaUrl !== 'string' || mediaUrl.length > 4096) return NextResponse.json({ error: 'Invalid media URL' }, { status: 400 });
+
+    originalImageCredits = currentUser.creditsRemaining;
+    originalVideoCredits = currentUser.videoCreditsRemaining;
+
+    const entitlement = await checkAndDeductDiagnosisEntitlement(currentUser, mediaType);
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason, remainingCredits: entitlement.remainingCredits, remainingVideoCredits: entitlement.remainingVideoCredits }, { status: 403 });
+    }
+    deducted = mediaType === 'video' ? entitlement.remainingVideoCredits !== undefined : entitlement.remainingCredits !== undefined;
+
+    const diagnosisResult = await getAIEngine().diagnosePlant({ mediaUrl, mediaType, plantSpeciesHint, notes });
+
+    let verifiedPlant: any = null;
+    if (plantId) {
+      const plant = await db.plants.findById(plantId);
+      if (plant && (plant.userId === currentUser.id || currentUser.role === 'admin')) verifiedPlant = plant;
+    }
+
+    const newDiagnosis = await db.diagnoses.create({
+      userId: currentUser.id,
+      plantId: verifiedPlant ? verifiedPlant.id : undefined,
+      mediaType,
+      mediaUrl,
+      identifiedSpecies: diagnosisResult.identifiedSpecies,
+      diseaseName: diagnosisResult.diseaseName,
+      pathogenType: diagnosisResult.pathogenType,
+      confidence: diagnosisResult.confidence,
+      severity: diagnosisResult.severity,
+      symptoms: diagnosisResult.symptoms,
+      causes: diagnosisResult.causes,
+      prognosis: diagnosisResult.prognosis,
+      treatmentSteps: diagnosisResult.treatmentSteps,
+      organicRemedies: diagnosisResult.organicRemedies,
+      chemicalRemedies: diagnosisResult.chemicalRemedies,
+      preventativeMeasures: diagnosisResult.preventativeMeasures,
+      boundingBoxes: diagnosisResult.boundingBoxes,
+      aiProviderUsed: diagnosisResult.aiProviderUsed,
+      adminReviewed: false,
+    });
+
+    if (verifiedPlant) {
+      const newStatus = diagnosisResult.severity === 'critical'
+        ? 'critical'
+        : diagnosisResult.severity === 'severe' || diagnosisResult.severity === 'moderate' ? 'warning' : 'healthy';
+      await db.plants.update(verifiedPlant.id, { healthStatus: newStatus });
+      await db.timeline.create({
+        plantId: verifiedPlant.id,
+        userId: currentUser.id,
+        eventType: 'diagnosis',
+        title: `AI Diagnosis: ${diagnosisResult.diseaseName}`,
+        description: `Severity: ${diagnosisResult.severity.toUpperCase()} (${diagnosisResult.confidence}% confidence). ${diagnosisResult.prognosis}`,
+        imageUrl: mediaUrl,
+      });
+
+      for (const step of diagnosisResult.treatmentSteps) {
+        await db.careTasks.create({
+          userId: currentUser.id,
+          plantId: verifiedPlant.id,
+          plantName: verifiedPlant.name,
+          title: `${step.title}: ${step.instruction.substring(0, 70)}...`,
+          category: 'spray',
+          dueDate: new Date().toISOString().split('T')[0],
+          isCompleted: false,
+          notes: step.frequency,
+        });
+      }
+    }
+
+    return NextResponse.json({ diagnosis: newDiagnosis, remainingCredits: entitlement.remainingCredits, remainingVideoCredits: entitlement.remainingVideoCredits });
+  } catch (error: any) {
+    // AI/database failures must not consume a metered scan. The original values are
+    // captured before deduction and restored only when this request actually deducted one.
+    if (currentUser && deducted) {
+      try {
+        if (mediaType === 'video' && originalVideoCredits !== undefined) {
+          await db.users.update(currentUser.id, { videoCreditsRemaining: originalVideoCredits });
+        } else if (mediaType === 'image' && originalImageCredits !== undefined) {
+          await db.users.update(currentUser.id, { creditsRemaining: originalImageCredits });
+        }
+      } catch (refundError) {
+        console.error('Failed to refund diagnosis entitlement:', refundError);
+      }
+    }
+    console.error('Diagnosis API error:', error);
+    return NextResponse.json({ error: error.message || 'Diagnosis failed. Please try again with a clearer photo.' }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const diagnoses = await db.diagnoses.listByUser(user.id);
+    return NextResponse.json({ diagnoses });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\identify\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { getAIEngine } from '@/lib/ai';
+import { checkAndDeductDiagnosisEntitlement } from '@/lib/payments/entitlements';
+import { db } from '@/lib/db/adapter';
+
+export async function POST(req: NextRequest) {
+  let user: Awaited<ReturnType<typeof getSessionUser>> = null;
+  let originalCredits: number | undefined;
+  let deducted = false;
+
+  try {
+    user = await getSessionUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { imageUrl } = await req.json();
+    if (typeof imageUrl !== 'string' || !imageUrl || imageUrl.length > 4096) {
+      return NextResponse.json({ error: 'A valid image URL is required' }, { status: 400 });
+    }
+
+    originalCredits = user.creditsRemaining;
+    const entitlement = await checkAndDeductDiagnosisEntitlement(user, 'image');
+    if (!entitlement.allowed) {
+      return NextResponse.json({ error: entitlement.reason, remainingCredits: entitlement.remainingCredits }, { status: 403 });
+    }
+    deducted = entitlement.remainingCredits !== undefined;
+
+    const identification = await getAIEngine().identifyPlant({ imageUrl });
+    return NextResponse.json({ identification, remainingCredits: entitlement.remainingCredits });
+  } catch (error: any) {
+    if (user && deducted && originalCredits !== undefined) {
+      try { await db.users.update(user.id, { creditsRemaining: originalCredits }); }
+      catch (refundError) { console.error('Failed to refund identification credit:', refundError); }
+    }
+    console.error('Identification API error:', error);
+    return NextResponse.json({ error: error.message || 'Plant identification failed' }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\plants\[id]\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plant = await db.plants.findById(params.id);
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    }
+
+    const diagnoses = await db.diagnoses.listByPlant(plant.id);
+    const timeline = await db.timeline.listByPlant(plant.id);
+
+    return NextResponse.json({ plant, diagnoses, timeline });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plant = await db.plants.findById(params.id);
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const allowedFields = [
+      'name',
+      'species',
+      'commonName',
+      'imageUrl',
+      'location',
+      'healthStatus',
+      'sunlightNeeds',
+      'wateringFrequencyDays',
+      'lastWateredDate',
+      'nextWateringDate',
+      'notes',
+    ];
+    const safeUpdates: Record<string, any> = {};
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) {
+        safeUpdates[key] = body[key];
+      }
+    }
+
+    const updated = await db.plants.update(params.id, safeUpdates);
+
+    return NextResponse.json({ plant: updated });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plant = await db.plants.findById(params.id);
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    }
+
+    await db.plants.delete(params.id);
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\plants\[id]\timeline\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plant = await db.plants.findById(params.id);
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
+      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    }
+
+    const timeline = await db.timeline.listByPlant(params.id);
+    return NextResponse.json({ timeline });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plant = await db.plants.findById(params.id);
+    if (!plant || plant.userId !== user.id) {
+      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const { eventType, title, description, imageUrl } = body;
+
+    const event = await db.timeline.create({
+      plantId: plant.id,
+      userId: user.id,
+      eventType: eventType || 'note',
+      title: title || 'Garden Update',
+      description: description || '',
+      imageUrl: imageUrl || undefined,
+    });
+
+    // If watering event, update plant lastWateredDate
+    if (eventType === 'watering') {
+      const now = new Date();
+      const next = new Date(now.getTime() + plant.wateringFrequencyDays * 24 * 3600 * 1000);
+      await db.plants.update(plant.id, {
+        lastWateredDate: now.toISOString(),
+        nextWateringDate: next.toISOString(),
+      });
+    }
+
+    return NextResponse.json({ event }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\plants\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+import { checkPlantTrackingEntitlement } from '@/lib/payments/entitlements';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plants = await db.plants.listByUser(user.id);
+    return NextResponse.json({ plants });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Enforce server-side plant tracking quota
+    const quotaCheck = await checkPlantTrackingEntitlement(user);
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const { name, species, commonName, imageUrl, location, sunlightNeeds, wateringFrequencyDays, notes } = body;
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return NextResponse.json({ error: 'Plant nickname is required' }, { status: 400 });
+    }
+
+    const safeWateringDays = Math.max(1, Math.min(365, parseInt(String(wateringFrequencyDays), 10) || 7));
+
+    const newPlant = await db.plants.create({
+      userId: user.id,
+      name: name.trim().slice(0, 100),
+      species: species ? String(species).trim().slice(0, 150) : 'Unknown botanical species',
+      commonName: commonName ? String(commonName).trim().slice(0, 150) : name.trim().slice(0, 100),
+      imageUrl: imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('http')
+        ? imageUrl.slice(0, 500)
+        : 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=600&auto=format&fit=crop&q=80',
+      location: location && typeof location === 'string' ? location.slice(0, 50) : 'indoor',
+      healthStatus: 'healthy',
+      sunlightNeeds: sunlightNeeds && typeof sunlightNeeds === 'string' ? sunlightNeeds.slice(0, 50) : 'indirect',
+      wateringFrequencyDays: safeWateringDays,
+      lastWateredDate: new Date().toISOString(),
+      nextWateringDate: new Date(Date.now() + safeWateringDays * 24 * 3600 * 1000).toISOString(),
+      notes: notes ? String(notes).slice(0, 2000) : '',
+    });
+
+    // Automatically create initial timeline entry
+    await db.timeline.create({
+      plantId: newPlant.id,
+      userId: user.id,
+      eventType: 'note',
+      title: `Added ${newPlant.name} to Garden`,
+      description: `Welcome to the collection! Initial watering schedule set to every ${newPlant.wateringFrequencyDays} days.`,
+      imageUrl: newPlant.imageUrl,
+    });
+
+    // Schedule initial care task
+    await db.careTasks.create({
+      userId: user.id,
+      plantId: newPlant.id,
+      plantName: newPlant.name,
+      title: `Water ${newPlant.name}`,
+      category: 'water',
+      dueDate: newPlant.nextWateringDate?.split('T')[0] || new Date().toISOString().split('T')[0],
+      isCompleted: false,
+    });
+
+    return NextResponse.json({ plant: newPlant }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+
+===== FILE: src\app\api\reports\route.ts =====
+import { NextRequest, NextResponse } from 'next/server';
+import { getSessionUser } from '@/lib/auth/session';
+import { db } from '@/lib/db/adapter';
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const plants = await db.plants.listByUser(user.id);
+    const diagnoses = await db.diagnoses.listByUser(user.id);
+    const careTasks = await db.careTasks.listByUser(user.id);
+
+    const healthyCount = plants.filter((p) => p.healthStatus === 'healthy').length;
+    const warningCount = plants.filter((p) => p.healthStatus === 'warning' || p.healthStatus === 'treating').length;
+    const criticalCount = plants.filter((p) => p.healthStatus === 'critical').length;
+    const overallScore = plants.length > 0 ? Math.round((healthyCount / plants.length) * 100) : null;
+
+    const standaloneScans = diagnoses.filter((d) => !d.plantId);
+
+    const report = {
+      reportId: `REP-${Date.now().toString(36).toUpperCase()}`,
+      generatedAt: new Date().toISOString(),
+      owner: {
+        name: user.name,
+        email: user.email,
+        subscriptionTier: user.subscriptionTier,
+      },
+      gardenSummary: {
+        totalPlants: plants.length,
+        healthScorePercentage: overallScore,
+        statusCounts: {
+          healthy: healthyCount,
+          attentionRequired: warningCount,
+          criticalIntervention: criticalCount,
+        },
+        message: plants.length === 0 ? 'No plants are currently tracked in your garden.' : undefined,
+      },
+      plants: plants.map((p) => ({
+        id: p.id,
+        name: p.name,
+        species: p.species,
+        location: p.location,
+        healthStatus: p.healthStatus,
+        recentDiagnoses: diagnoses
+          .filter((d) => d.plantId === p.id)
+          .slice(0, 3)
+          .map((d) => ({
+            disease: d.diseaseName,
+            confidence: `${d.confidence}%`,
+            severity: d.severity,
+            date: d.createdAt,
+          })),
+      })),
+      standaloneScans: standaloneScans.slice(0, 20).map((d) => ({
+        id: d.id,
+        species: d.identifiedSpecies,
+        disease: d.diseaseName,
+        confidence: d.confidence,
+        severity: d.severity,
+        mediaType: d.mediaType,
+        date: d.createdAt,
+      })),
+      actionableProtocols: diagnoses.slice(0, 5).map((d) => ({
+        diagnosisId: d.id,
+        disease: d.diseaseName,
+        organicWhatToMake: d.organicRemedies,
+        chemicalWhatToBuy: d.chemicalRemedies,
+        preventative: d.preventativeMeasures,
+      })),
+      careTasks: careTasks.slice(0, 20),
+    };
+
+    return NextResponse.json({ report });
+  } catch (error: any) {
+    console.error('Reports API error:', error);
+    return NextResponse.json({ error: error.message || 'Unable to generate report' }, { status: 500 });
+  }
+}
+
+
+===== FILE: tsconfig.json =====
+{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "android-native"]
+}
+
+
+===== FILE: vercel.json =====
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}

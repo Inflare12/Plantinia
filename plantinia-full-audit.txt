@@ -1,0 +1,1130 @@
+
+==================== SYSTEM ====================
+
+09/13/2026 14:04:40
+Node: v24.12.0
+npm: 11.6.2
+Git: git version 2.55.0.windows.5
+
+==================== GIT STATUS ====================
+
+M  prisma/schema.prisma M  src/lib/payments/entitlements.ts MM tests/plantinia.test.mjs ?? package-lock.json ?? plantinia-audit-bundle.txt ?? plantinia-full-audit.txt
+
+==================== GIT BRANCH ====================
+
+main
+
+==================== GIT LOG ====================
+
+963d6aa security: replace credential-like demo seed data with empty development fixtures 9f17b5b security: remove credential-like demo seed data 857f3bc ci: validate production build configuration 27db001 test: isolate entitlement tests from local database bc01b09 fix(storage): require a public media URL for production AI access a438025 security(storage): fail closed instead of allowing unsigned S3/R2 production uploads f128ddc fix(cron): escape user-controlled email HTML and hide raw errors 1448d59 fix(billing): rate-limit Stripe checkout and hide raw errors 1c570c2 fix(billing): rate-limit Razorpay order creation and hide raw errors 3d9b8cf feat(billing): handle Stripe renewal, failure and cancellation lifecycle
+
+==================== GIT DIFF STAT ====================
+
+warning: in the working copy of 'tests/plantinia.test.mjs', LF will be replaced by CRLF the next time Git touches it  tests/plantinia.test.mjs | 8 ++++++++  1 file changed, 8 insertions(+)
+
+==================== STAGED DIFF STAT ====================
+
+ prisma/schema.prisma             | 44 +++++++++++++++++---  src/lib/payments/entitlements.ts |  5 ++-  tests/plantinia.test.mjs         | 87 ++++++++++++++++++++++++++++++----------  3 files changed, 107 insertions(+), 29 deletions(-)
+
+==================== PACKAGE.JSON ====================
+
+{
+  "name": "plantinia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready AI Plant Doctor SaaS & Mobile-Ready Web App",
+  "scripts": {
+    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -p 3000 -H 0.0.0.0",
+    "lint": "next lint",
+    "test": "node --import tsx --test tests/*.test.mjs",
+    "db:seed": "tsx prisma/seed.ts",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android"
+  },
+  "prisma": { "seed": "tsx prisma/seed.ts" },
+  "dependencies": {
+    "@capacitor/camera": "^6.1.3",
+    "@prisma/client": "^6.19.3",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.453.0",
+    "next": "^14.2.15",
+    "nodemailer": "^10.0.9",
+    "prisma": "^6.19.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@types/node": "^20.17.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.15",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.13",
+    "typescript": "^5.6.3"
+  }
+}
+
+
+==================== TS CONFIG ====================
+
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "android-native"]
+}
+
+
+==================== VERCEL CONFIG ====================
+
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}
+
+
+==================== PRISMA SCHEMA ====================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                           String               @id @default(cuid())
+  email                        String               @unique
+  passwordHash                 String
+  name                         String
+  avatarUrl                    String?
+  role                         Role                 @default(USER)
+  isEmailVerified              Boolean              @default(false)
+  verificationToken            String?
+  verificationCode             String?
+  verificationCodeExpiresAt    DateTime?
+  resetPasswordToken           String?
+  subscriptionTier             SubscriptionTier     @default(FREE)
+  subscriptionStatus           SubscriptionStatus   @default(ACTIVE)
+  subscriptionCurrentPeriodEnd DateTime?
+  paymentProvider              String?
+  subscriptionId               String?
+  creditsRemaining             Int                  @default(5)
+  videoCreditsRemaining        Int                  @default(0)
+  apiKey                       String?              @unique
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+  careTasks                    CarePlanTask[]
+  chatMessages                 ChatMessage[]
+  diagnoses                    Diagnosis[]
+  invoices                     Invoice[]
+  plants                       Plant[]
+  timelineEvents               PlantTimelineEvent[]
+  feedback                     UserFeedback[]
+}
+
+model Plant {
+  id                    String               @id @default(cuid())
+  userId                String
+  name                  String
+  species               String
+  commonName            String
+  imageUrl              String
+  location              String               @default("indoor")
+  healthStatus          HealthStatus         @default(HEALTHY)
+  sunlightNeeds         String               @default("indirect")
+  wateringFrequencyDays Int                  @default(7)
+  lastWateredDate       DateTime?
+  nextWateringDate      DateTime?
+  notes                 String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  careTasks             CarePlanTask[]
+  diagnoses             Diagnosis[]
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timelineEvents        PlantTimelineEvent[]
+  @@index([userId])
+  @@index([species])
+  @@index([healthStatus])
+}
+
+model Diagnosis {
+  id                    String       @id @default(cuid())
+  userId                String
+  plantId               String?
+  mediaType             String       @default("image")
+  mediaUrl              String
+  identifiedSpecies     String
+  diseaseName           String
+  pathogenType          PathogenType @default(NONE)
+  confidence            Float
+  severity              Severity     @default(MILD)
+  uncertainty           String?      @default("low")
+  symptoms              Json
+  causes                Json
+  prognosis             String
+  treatmentSteps        Json
+  organicRemedies       Json
+  chemicalRemedies      Json
+  preventativeMeasures  Json
+  boundingBoxes         Json?
+  aiProviderUsed        String
+  modelVersion          String?
+  candidates            Json?
+  knowledgeReferences   Json?
+  adminReviewed         Boolean      @default(false)
+  adminAccuracyFeedback String?
+  createdAt             DateTime     @default(now())
+  plant                 Plant?       @relation(fields: [plantId], references: [id])
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedback              UserFeedback[]
+  @@index([userId])
+  @@index([plantId])
+  @@index([createdAt])
+}
+
+model PlantTimelineEvent {
+  id          String   @id @default(cuid())
+  plantId     String
+  userId      String
+  eventType   String
+  title       String
+  description String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  plant       Plant    @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CarePlanTask {
+  id          String   @id @default(cuid())
+  userId      String
+  plantId     String?
+  plantName   String?
+  title       String
+  category    String
+  dueDate     DateTime
+  isCompleted Boolean  @default(false)
+  notes       String?
+  plant       Plant?   @relation(fields: [plantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  plantId   String?
+  role      String
+  content   String
+  mediaUrl  String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeItem {
+  id             String   @id @default(cuid())
+  type           String
+  name           String
+  scientificName String?  @unique
+  commonNames    Json?
+  category       String?
+  description    String?
+  affectedPlants Json?
+  symptoms       Json?
+  treatment      Json?
+  prevention     Json?
+  sources        Json?
+  imageUrl       String?
+  metadata       Json?
+  isActive       Boolean  @default(true)
+  lastUpdated    DateTime @default(now())
+  @@index([type])
+  @@index([scientificName])
+  @@index([isActive])
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  userId            String
+  amount            Float
+  currency          String   @default("INR")
+  provider          String
+  providerPaymentId String
+  status            String   @default("paid")
+  plan              String
+  receiptUrl        String?
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerPaymentId])
+  @@index([userId])
+}
+
+model UserFeedback {
+  id           String   @id @default(cuid())
+  userId       String
+  diagnosisId  String   @unique
+  wasCorrect   Boolean
+  correction   String?
+  notes        String?
+  timestamp    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  diagnosis    Diagnosis @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([diagnosisId])
+}
+
+model ModelMetadata {
+  id              String   @id @default(cuid())
+  name            String
+  version         String   @unique
+  type            String
+  status          String   @default("staging")
+  description     String
+  trainedOn       String
+  accuracy        Float?
+  classes         Json?
+  inputSize       Json?
+  preprocessing   Json?
+  lastUpdated     DateTime @default(now())
+  license         String?
+  citation        String?
+  isActive        Boolean  @default(false)
+  registeredAt    DateTime @default(now())
+  @@index([type])
+  @@index([status])
+  @@index([isActive])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+enum SubscriptionTier {
+  FREE
+  CARE
+  DOCTOR
+  PRO
+  FARM
+}
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  CANCELED
+  PAST_DUE
+}
+enum HealthStatus {
+  HEALTHY
+  WARNING
+  CRITICAL
+  TREATING
+}
+enum PathogenType {
+  FUNGAL
+  BACTERIAL
+  VIRAL
+  PEST
+  ENVIRONMENTAL
+  NONE
+}
+enum Severity {
+  MILD
+  MODERATE
+  SEVERE
+  CRITICAL
+}
+
+
+
+==================== CI WORKFLOW ====================
+
+name: Plantinia CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: plantinia-ci-secret-change-me-32-characters-long
+      DATABASE_URL: ''
+      AI_PROVIDER: mock
+      EMAIL_PROVIDER: mock
+      STORAGE_PROVIDER: local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run tests
+        run: npm test
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        env:
+          NODE_ENV: production
+          JWT_SECRET: plantinia-ci-production-secret-change-me-32-characters-long
+          DATABASE_URL: postgresql://ci:ci@example.com:5432/plantinia
+          AI_PROVIDER: custom
+          CUSTOM_INFERENCE_URL: https://example.com/inference
+          CUSTOM_INFERENCE_API_KEY: ci-placeholder
+          EMAIL_PROVIDER: smtp
+          SMTP_HOST: smtp.example.com
+          SMTP_PORT: 587
+          SMTP_USER: ci@example.com
+          SMTP_PASSWORD: ci-placeholder
+          STORAGE_PROVIDER: supabase
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+          NEXT_PUBLIC_STORAGE_PUBLIC_URL: https://example.supabase.co/storage/v1/object/public/plantinia-media
+          NEXT_PUBLIC_APP_URL: https://plantinia.example.com
+        run: npm run build
+
+
+==================== ENV VARIABLE NAMES ONLY ====================
+
+NODE_ENV=<REDACTED>
+NEXT_PUBLIC_APP_URL=<REDACTED>
+JWT_SECRET=<REDACTED>
+AI_PROVIDER=<REDACTED>
+STORAGE_PROVIDER=<REDACTED>
+EMAIL_PROVIDER=<REDACTED>
+WEATHER_PROVIDER=<REDACTED>
+NEXT_PUBLIC_RAZORPAY_KEY_ID=<REDACTED>
+RAZORPAY_KEY_SECRET=<REDACTED>
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=<REDACTED>
+STRIPE_SECRET_KEY=<REDACTED>
+DATABASE_URL=<REDACTED>
+DATABASE_URL_UNPOOLED=<REDACTED>
+NEON_BRANCH=<REDACTED>
+NEON_AUTH_BASE_URL=<REDACTED>
+NEON_AUTH_JWKS_URL=<REDACTED>
+
+==================== ENV EXAMPLE ====================
+
+AI_PROVIDER=
+CAPACITOR_SERVER_URL=
+CUSTOM_INFERENCE_API_KEY=
+CUSTOM_INFERENCE_URL=
+DATABASE_URL=
+EMAIL_FROM=
+EMAIL_PROVIDER=
+GEMINI_API_KEY=
+GEMINI_MODEL=
+JWT_SECRET=
+NEXT_PUBLIC_APP_URL=
+NEXT_PUBLIC_RAZORPAY_KEY_ID=
+NEXT_PUBLIC_STORAGE_PUBLIC_URL=
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+RESEND_API_KEY=
+S3_ACCESS_KEY=
+S3_BUCKET=
+S3_ENDPOINT=
+S3_REGION=
+S3_SECRET_KEY=
+STORAGE_PROVIDER=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=plantinia-media
+SMTP_HOST=
+SMTP_PASSWORD=
+SMTP_PORT=587
+SMTP_USER=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=
+WEATHER_API_KEY=
+WEATHER_PROVIDER=
+
+==================== TEST ====================
+
+
+> plantinia@1.0.0 test
+> node --import tsx --test tests/*.test.mjs
+
+G£ö Auth Web Crypto JWT signs and verifies payload correctly (47.5663ms)
+G£ö Database Adapter handles user and plant CRUD operations (53.9725ms)
+G£ö Modular AI Engine generates full pathology diagnostics with treatments (4.6458ms)
+G£û Entitlement checks enforce Free tier limits and allow Pro tier (8.3151ms)
+G£ö Weather agronomic engine returns valid humidity and disease risk indices (823.6741ms)
+Gä¦ tests 5
+Gä¦ suites 0
+Gä¦ pass 4
+Gä¦ fail 1
+Gä¦ cancelled 0
+Gä¦ skipped 0
+Gä¦ todo 0
+Gä¦ duration_ms 1147.5753
+
+G£û failing tests:
+
+test at tests\plantinia.test.mjs:94:1
+G£û Entitlement checks enforce Free tier limits and allow Pro tier (8.3151ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (E:\Desktop\Plantinia\tests\plantinia.test.mjs:117:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+
+==================== TYPESCRIPT ====================
+
+src/app/api/plants/[id]/route.ts(43,55): error TS2345: Argument of type '{ name?: string | undefined; imageUrl?: string | undefined; notes?: string | undefined; species?: string | undefined; commonName?: string | undefined; location?: "indoor" | "outdoor" | "balcony" | "greenhouse" | undefined; ... 4 more ...; nextWateringDate?: string | ... 1 more ... | undefined; }' is not assignable to parameter of type 'Partial<Plant>'.
+  Types of property 'lastWateredDate' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+      Type 'null' is not assignable to type 'string | undefined'.
+src/lib/ai/openai.ts(14,37): error TS2698: Spread types may only be created from object types.
+src/lib/ai/validation.ts(65,3): error TS2322: Type '{ confidence: number; species: string; commonName: string; sunlightNeeds: "direct" | "indirect" | "low" | "shade"; wateringFrequencyDays: number; family: string; difficulty: "moderate" | "easy" | "expert"; careSummary: string; toxicityAlert?: string | ... 1 more ... | undefined; }' is not assignable to type 'Omit<IdentifyOutput, "aiProviderUsed">'.
+  Types of property 'toxicityAlert' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+      Type 'null' is not assignable to type 'string | undefined'.
+src/lib/auth/rate-limit.ts(13,33): error TS2802: Type 'MapIterator<[string, RateLimitRecord]>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+src/lib/auth/rate-limit.ts(14,53): error TS7006: Parameter 't' implicitly has an 'any' type.
+
+
+==================== PRODUCTION BUILD ====================
+
+
+> plantinia@1.0.0 build
+> next build
+
+  Gû¦ Next.js 14.2.35
+  - Environments: .env.local, .env
+
+   Creating an optimized production build ...
+ G£ô Compiled successfully
+   Linting and checking validity of types ...
+
+   We detected TypeScript in your project and reconfigured your tsconfig.json file for you. Strict-mode is set to false by default.
+   The following mandatory changes were made to your tsconfig.json:
+
+   	- resolveJsonModule was set to true (to match webpack resolution)
+
+
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+<--- Last few GCs --->
+
+[25236:0000013D44C81000]     6087 ms: Scavenge (interleaved) 98.0 (132.7) -> 80.1 (204.5) MB, pooled: 0 MB, 27.83 / 0.00 ms  
+(average mu = 0.996, current mu = 0.994) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+
+<--- Last few GCs --->
+
+[10752:00000171FFDAF000]     5777 ms: Scavenge (interleaved) 340.3 (405.9) -> 292.9 (414.4) MB, pooled: 0 MB, 16.16 / 0.00 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+[10752:00000171FFDAF000]     6059 ms: Scavenge (interleaved) 351.8 (417.3) -> 303.1 (425.7) MB, pooled: 0 MB, 16.70 / 0.01 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+
+<--- Last few GCs --->
+
+[10752:00000171FFDAF000]     5777 ms: Scavenge (interleaved) 340.3 (405.9) -> 292.9 (414.4) MB, pooled: 0 MB, 16.16 / 0.00 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+[10752:00000171FFDAF000]     6059 ms: Scavenge (interleaved) 351.8 (417.3) -> 303.1 (425.7) MB, pooled: 0 MB, 16.70 / 0.01 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+
+<--- Last few GCs --->
+
+[10752:00000171FFDAF000]     5777 ms: Scavenge (interleaved) 340.3 (405.9) -> 292.9 (414.4) MB, pooled: 0 MB, 16.16 / 0.00 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+[10752:00000171FFDAF000]     6059 ms: Scavenge (interleaved) 351.8 (417.3) -> 303.1 (425.7) MB, pooled: 0 MB, 16.70 / 0.01 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+
+<--- Last few GCs --->
+
+[10752:00000171FFDAF000]     5777 ms: Scavenge (interleaved) 340.3 (405.9) -> 292.9 (414.4) MB, pooled: 0 MB, 16.16 / 0.00 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+[10752:00000171FFDAF000]     6059 ms: Scavenge (interleaved) 351.8 (417.3) -> 303.1 (425.7) MB, pooled: 0 MB, 16.70 / 0.01 ms  
+(average mu = 0.978, current mu = 0.974) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+ 1: 00007FF610DEAD5F 
+ 2: 00007FF611A332D7 
+ 3: 00007FF6113AE076 
+ 4: 00007FF6124E9442 
+ 5: 00007FF6123C18A4 
+ 6: 00007FF612A963B5 
+ 7: 00007FF612A965F3 
+ 8: 00007FF6128DC70B 
+ 9: 00007FF6128D74EC 
+10: 00007FF6128D6A3A 
+11: 00007FF6128D785D 
+12: 00007FF6128D08D4 
+13: 00007FF6128CCCCC 
+14: 00007FF6124F8F7D 
+15: 00007FF612430A99 
+16: 00007FF6124F9828 
+17: 00007FF6124F94EC 
+18: 00007FF6124F9258 
+19: 00007FF61243063D 
+20: 00007FF61240A4B0 
+21: 00007FF6124075B2 
+22: 00007FF6124071CE 
+23: 00007FF6119A6F0F 
+24: 00007FF61196BF9D 
+25: 00007FF61196BC95 
+26: 00007FF61220593F 
+27: 00007FF610D3ADCE 
+28: 00007FF611A88646 
+29: 00007FF612CC9FB3 
+30: 00007FFC6E1D257D BaseThreadInitThunk+29
+31: 00007FFC6EAAAF08 
+Next.js build worker exited with code: 134 and signal: null
+
+
+==================== ENTITLEMENTS ====================
+
+import { User } from '../db/schema';
+import { db } from '../db/adapter';
+import { SUBSCRIPTION_PLANS, SubscriptionTier, getPlan } from './types';
+import { prisma } from '../db/prisma';
+
+export interface EntitlementCheckResult { allowed: boolean; reason?: string; remainingCredits?: number; remainingVideoCredits?: number; }
+
+export function getEffectiveSubscriptionTier(user: User): SubscriptionTier {
+  const tier = (user.subscriptionTier as SubscriptionTier) || 'free';
+  if (tier === 'free') return 'free';
+  if (!user.subscriptionCurrentPeriodEnd) return 'free';
+  if (new Date(user.subscriptionCurrentPeriodEnd).getTime() <= Date.now()) return 'free';
+  if (!['active', 'trialing', 'canceled'].includes(user.subscriptionStatus)) return 'free';
+  return tier;
+}
+
+const postgresConfigured = () => process.env.NODE_ENV !== 'test' && /^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL || '');
+
+async function atomicDecrement(userId: string, field: 'creditsRemaining' | 'videoCreditsRemaining') {
+  if (postgresConfigured()) {
+    const result = await prisma.user.updateMany({ where: { id: userId, [field]: { gt: 0 } }, data: { [field]: { decrement: 1 } } });
+    return result.count === 1;
+  }
+  const user = await db.users.findById(userId);
+  if (!user || (user[field] ?? 0) <= 0) return false;
+  await db.users.update(userId, { [field]: (user[field] ?? 0) - 1 });
+  return true;
+}
+
+export async function checkAndDeductDiagnosisEntitlement(user: User, mediaType: 'image' | 'video' = 'image'): Promise<EntitlementCheckResult> {
+  const tier = getEffectiveSubscriptionTier(user);
+  const plan = getPlan(tier);
+  if (plan.creditsPerMonth === 'unlimited') return { allowed: true };
+
+  if (mediaType === 'video') {
+    if (plan.videoCreditsPerMonth === 0) return { allowed: false, reason: `AI Video Diagnosis is exclusive to Plant Doctor (10 scans/mo), Pro, and Commercial plans. Upgrade from ${plan.name} to analyze plant videos.` };
+    const ok = await atomicDecrement(user.id, 'videoCreditsRemaining');
+    if (!ok) return { allowed: false, reason: `You have used all ${plan.videoCreditsPerMonth} monthly video scans included in ${plan.name}. Upgrade to Pro Plant Doctor for unlimited video diagnoses.`, remainingVideoCredits: 0 };
+    const updated = await db.users.findById(user.id);
+    return { allowed: true, remainingVideoCredits: updated?.videoCreditsRemaining ?? Math.max(0, (user.videoCreditsRemaining ?? 1) - 1) };
+  }
+
+  const ok = await atomicDecrement(user.id, 'creditsRemaining');
+  if (!ok) {
+    let upgradeSuggestion = 'Upgrade to Plant Care (â‚¹49) or Plant Doctor (â‚¹139) for more scans.';
+    if (tier === 'care') upgradeSuggestion = 'Upgrade to Plant Doctor (â‚¹139) for 60 scans or Pro (â‚¹399) for unlimited scans.';
+    else if (tier === 'doctor') upgradeSuggestion = 'Upgrade to Pro Plant Doctor (â‚¹399) for unlimited scans.';
+    return { allowed: false, reason: `You have used all ${plan.creditsPerMonth} monthly AI diagnosis scans on the ${plan.name} plan. ${upgradeSuggestion}`, remainingCredits: 0 };
+  }
+
+  const updated = await db.users.findById(user.id);
+  return { allowed: true, remainingCredits: updated?.creditsRemaining ?? Math.max(0, user.creditsRemaining - 1) };
+}
+
+export async function checkPlantTrackingEntitlement(user: User): Promise<EntitlementCheckResult> {
+  const tier = getEffectiveSubscriptionTier(user);
+  const plan = getPlan(tier);
+  if (plan.maxTrackedPlants === 'unlimited') return { allowed: true };
+  const existingPlants = await db.plants.listByUser(user.id);
+  if (existingPlants.length >= plan.maxTrackedPlants) {
+    let nextPlanAdvice = 'Plant Care (â‚¹49/mo, up to 10 plants)';
+    if (tier === 'care') nextPlanAdvice = 'Plant Doctor (â‚¹139/mo, up to 30 plants)';
+    else if (tier === 'doctor') nextPlanAdvice = 'Pro Plant Doctor (â‚¹399/mo, unlimited plants)';
+    return { allowed: false, reason: `You have reached your garden capacity limit of ${plan.maxTrackedPlants} plants for ${plan.name}. Upgrade to ${nextPlanAdvice} to track more specimens.` };
+  }
+  return { allowed: true };
+}
+
+export function canAccessChat(user: User): { allowed: boolean; mode: 'basic' | 'advanced'; reason?: string } {
+  const tier = getEffectiveSubscriptionTier(user);
+  if (tier === 'free') return { allowed: false, mode: 'basic', reason: 'AI Plant Doctor chat is available from the Plant Care plan.' };
+  return { allowed: true, mode: tier === 'doctor' || tier === 'pro' || tier === 'farm' ? 'advanced' : 'basic' };
+}
+
+export function canExportPdfReport(user: User): boolean {
+  const tier = getEffectiveSubscriptionTier(user);
+  return tier === 'doctor' || tier === 'pro' || tier === 'farm';
+}
+
+export function canAccessAdmin(user: User): boolean { return user.role === 'admin'; }
+
+
+
+
+
+==================== PAYMENT TYPES ====================
+
+export type SubscriptionTier = 'free' | 'care' | 'doctor' | 'pro' | 'farm';
+
+export interface PlanPricing {
+  id: SubscriptionTier; name: string; badge?: string; priceINR: number; priceUSD: number; period: 'month' | 'forever'; description: string; ctaText: string;
+  creditsPerMonth: number | 'unlimited'; videoCreditsPerMonth: number | 'unlimited'; maxTrackedPlants: number | 'unlimited'; features: string[]; razorpayPlanId?: string; stripePriceId?: string;
+}
+
+export const SUBSCRIPTION_TIER_ORDER: SubscriptionTier[] = ['free', 'care', 'doctor', 'pro', 'farm'];
+
+export const SUBSCRIPTION_PLANS: Record<SubscriptionTier, PlanPricing> = {
+  free: { id: 'free', name: 'Starter Gardener', priceINR: 0, priceUSD: 0, period: 'forever', description: 'Essential diagnosis for houseplant hobbyists.', ctaText: 'Get Started Free', creditsPerMonth: 5, videoCreditsPerMonth: 0, maxTrackedPlants: 4, features: ['5 AI leaf scans every month', 'Basic organic & home recipes', 'Track up to 4 plants', 'Plant disease encyclopedia'] },
+  care: { id: 'care', name: 'Plant Care', badge: 'Affordable Care', priceINR: 49, priceUSD: 0, period: 'month', description: 'Everyday AI-powered care for growing plant collections.', ctaText: 'Start Plant Care', creditsPerMonth: 20, videoCreditsPerMonth: 0, maxTrackedPlants: 10, features: ['20 AI leaf scans every month', 'Basic disease & pest identification', 'Basic AI plant-care chat', 'Track up to 10 plants', 'Organic & home remedies', 'Plant disease encyclopedia', 'Basic weather-aware recommendations'] },
+  doctor: { id: 'doctor', name: 'Plant Doctor', badge: 'Best Value', priceINR: 139, priceUSD: 0, period: 'month', description: 'Advanced diagnosis and care for serious plant enthusiasts.', ctaText: 'Become a Plant Doctor', creditsPerMonth: 60, videoCreditsPerMonth: 10, maxTrackedPlants: 30, features: ['60 AI leaf scans every month', '10 AI video scans every month', 'Advanced Dr. Flora AI Doctor chat', 'Track up to 30 plants', 'Detailed AI diagnosis reports', 'Weather & microclimate insights', 'Care plans and reminders', 'Plant disease & pest encyclopedia', 'Printable PDF health reports'] },
+  pro: { id: 'pro', name: 'Pro Plant Doctor', badge: 'Most Popular', priceINR: 399, priceUSD: 4.99, period: 'month', description: 'Unlimited AI diagnoses and 24/7 doctor chat.', ctaText: 'Upgrade to Pro', creditsPerMonth: 'unlimited', videoCreditsPerMonth: 'unlimited', maxTrackedPlants: 'unlimited', features: ['Unlimited AI leaf & video scans', '24/7 Dr. Flora AI Doctor chat', 'Unlimited plant collection tracking', 'Microclimate weather & frost warnings', 'Export printable health reports (PDF)'] },
+  farm: { id: 'farm', name: 'Commercial Nursery', badge: 'Commercial', priceINR: 1999, priceUSD: 0, period: 'month', description: 'For greenhouses, nurseries, and agronomists.', ctaText: 'Choose Commercial', creditsPerMonth: 'unlimited', videoCreditsPerMonth: 'unlimited', maxTrackedPlants: 'unlimited', features: ['Everything in Pro included', 'REST API Access Keys for sensors', 'Multi-acre batch scanning & plots', 'Download annotated COCO / YOLO data'] },
+};
+
+export function getPlan(tier: string | undefined): PlanPricing { if (!tier || !(tier in SUBSCRIPTION_PLANS)) return SUBSCRIPTION_PLANS.free; return SUBSCRIPTION_PLANS[tier as SubscriptionTier]; }
+
+
+==================== API ROUTES ====================
+
+
+FullName                                                             Length
+--------                                                             ------
+E:\Desktop\Plantinia\src\app\api\admin\datasets\route.ts               1655
+E:\Desktop\Plantinia\src\app\api\admin\feedback\route.ts               1042
+E:\Desktop\Plantinia\src\app\api\admin\models\route.ts                  574
+E:\Desktop\Plantinia\src\app\api\admin\models\[id]\activate\route.ts    881
+E:\Desktop\Plantinia\src\app\api\admin\stats\route.ts                  1883
+E:\Desktop\Plantinia\src\app\api\auth\login\route.ts                   3522
+E:\Desktop\Plantinia\src\app\api\auth\logout\route.ts                   396
+E:\Desktop\Plantinia\src\app\api\auth\me\route.ts                      1212
+E:\Desktop\Plantinia\src\app\api\auth\signup\route.ts                  5054
+E:\Desktop\Plantinia\src\app\api\auth\verify-email\route.ts            3834
+E:\Desktop\Plantinia\src\app\api\billing\create-order\route.ts         1475
+E:\Desktop\Plantinia\src\app\api\billing\plans\route.ts                1481
+E:\Desktop\Plantinia\src\app\api\billing\stripe-checkout\route.ts      1626
+E:\Desktop\Plantinia\src\app\api\billing\verify-payment\route.ts       6383
+E:\Desktop\Plantinia\src\app\api\billing\webhooks\razorpay\route.ts    4218
+E:\Desktop\Plantinia\src\app\api\billing\webhooks\stripe\route.ts      6772
+E:\Desktop\Plantinia\src\app\api\care-plans\route.ts                   1931
+E:\Desktop\Plantinia\src\app\api\care-plans\[id]\route.ts              1631
+E:\Desktop\Plantinia\src\app\api\chat\route.ts                         4470
+E:\Desktop\Plantinia\src\app\api\cron\reminders\route.ts               2781
+E:\Desktop\Plantinia\src\app\api\diagnose\route.ts                     6758
+E:\Desktop\Plantinia\src\app\api\diagnose\[id]\route.ts                 791
+E:\Desktop\Plantinia\src\app\api\health\route.ts                        447
+E:\Desktop\Plantinia\src\app\api\identify\route.ts                     2053
+E:\Desktop\Plantinia\src\app\api\knowledge\route.ts                     506
+E:\Desktop\Plantinia\src\app\api\media\upload\route.ts                 1583
+E:\Desktop\Plantinia\src\app\api\plants\route.ts                       3925
+E:\Desktop\Plantinia\src\app\api\plants\[id]\route.ts                  3388
+E:\Desktop\Plantinia\src\app\api\plants\[id]\timeline\route.ts         2617
+E:\Desktop\Plantinia\src\app\api\recommendations\route.ts              2410
+E:\Desktop\Plantinia\src\app\api\reports\route.ts                      2982
+E:\Desktop\Plantinia\src\app\api\weather\route.ts                       722
+
+
+
+
+==================== LIB FILES ====================
+
+
+FullName                                                Length
+--------                                                ------
+E:\Desktop\Plantinia\src\lib\api-client.ts                8130
+E:\Desktop\Plantinia\src\lib\env.ts                       4441
+E:\Desktop\Plantinia\src\lib\utils.ts                     2213
+E:\Desktop\Plantinia\src\lib\ai\custom.ts                 2498
+E:\Desktop\Plantinia\src\lib\ai\gemini.ts                 5657
+E:\Desktop\Plantinia\src\lib\ai\index.ts                   966
+E:\Desktop\Plantinia\src\lib\ai\media.ts                  2534
+E:\Desktop\Plantinia\src\lib\ai\mock.ts                  11354
+E:\Desktop\Plantinia\src\lib\ai\openai.ts                 4515
+E:\Desktop\Plantinia\src\lib\ai\types.ts                  2327
+E:\Desktop\Plantinia\src\lib\ai\validation.ts             2765
+E:\Desktop\Plantinia\src\lib\ai\models\contracts.ts       8764
+E:\Desktop\Plantinia\src\lib\ai\models\adapters\mock.ts   6686
+E:\Desktop\Plantinia\src\lib\auth\jwt.ts                  4067
+E:\Desktop\Plantinia\src\lib\auth\rate-limit.ts           1860
+E:\Desktop\Plantinia\src\lib\auth\session.ts              3539
+E:\Desktop\Plantinia\src\lib\db\adapter.ts               50127
+E:\Desktop\Plantinia\src\lib\db\prisma.ts                  561
+E:\Desktop\Plantinia\src\lib\db\schema.ts                 4809
+E:\Desktop\Plantinia\src\lib\db\seed-data.ts               692
+E:\Desktop\Plantinia\src\lib\device\camera.ts             2334
+E:\Desktop\Plantinia\src\lib\email\index.ts               3559
+E:\Desktop\Plantinia\src\lib\knowledge\contracts.ts      11035
+E:\Desktop\Plantinia\src\lib\knowledge\adapters\mock.ts   3753
+E:\Desktop\Plantinia\src\lib\payments\entitlements.ts     4826
+E:\Desktop\Plantinia\src\lib\payments\razorpay.ts         2550
+E:\Desktop\Plantinia\src\lib\payments\stripe.ts           2615
+E:\Desktop\Plantinia\src\lib\payments\types.ts            3316
+E:\Desktop\Plantinia\src\lib\storage\index.ts             4934
+E:\Desktop\Plantinia\src\lib\weather\open-meteo.ts        2420
+
+
+
+
+==================== PACKAGE LOCK ====================
+
+package-lock.json EXISTS
+
+==================== PRISMA MIGRATIONS ====================
+
+
+FullName                                                                                              Length
+--------                                                                                              ------
+E:\Desktop\Plantinia\prisma\migrations\migration_lock.toml                                               128
+E:\Desktop\Plantinia\prisma\migrations\20260910163037_init\migration.sql                                7194
+E:\Desktop\Plantinia\prisma\migrations\20260910180000_add_missing_fields_and_new_tables\migration.sql   3811
+
+
+
+
+==================== SEED ====================
+
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+const knowledge = [
+  {
+    id: 'kb_seed_tomato_late_blight',
+    type: 'disease',
+    name: 'Tomato Late Blight',
+    scientificName: 'Phytophthora infestans',
+    category: 'disease',
+    description: 'A serious disease of tomato and other nightshades favored by cool, wet conditions and prolonged leaf wetness.',
+    affectedPlants: ['Tomato', 'Potato', 'Eggplant'],
+    symptoms: ['Irregular dark water-soaked lesions', 'Rapid browning', 'Possible white sporulation under humid conditions'],
+    treatment: { steps: ['Remove severely infected tissue', 'Improve airflow', 'Avoid overhead irrigation', 'Use only locally registered products according to their label'] },
+    prevention: { steps: ['Keep foliage dry', 'Use adequate plant spacing', 'Remove infected debris'] },
+    sources: [{ title: 'Cornell Vegetable MD Online', url: 'https://vegetablemdonline.ppath.cornell.edu/' }],
+  },
+  {
+    id: 'kb_seed_powdery_mildew',
+    type: 'disease',
+    name: 'Powdery Mildew',
+    scientificName: 'Podosphaera spp.',
+    category: 'disease',
+    description: 'A group of fungal diseases producing characteristic white powdery growth on plant surfaces.',
+    affectedPlants: ['Rose', 'Cucumber', 'Zucchini', 'Grape'],
+    symptoms: ['White powdery growth', 'Leaf distortion', 'Reduced vigor'],
+    treatment: { steps: ['Remove heavily affected leaves', 'Increase airflow', 'Follow a locally registered fungicide label when treatment is necessary'] },
+    prevention: { steps: ['Avoid overcrowding', 'Provide suitable light', 'Avoid excessive nitrogen'] },
+    sources: [{ title: 'UC IPM', url: 'https://ipm.ucanr.edu/' }],
+  },
+  {
+    id: 'kb_seed_spider_mites',
+    type: 'pest',
+    name: 'Spider Mites',
+    scientificName: 'Tetranychus spp.',
+    category: 'pest',
+    description: 'Tiny sap-feeding pests that can cause stippling, bronzing and fine webbing, especially in hot dry conditions.',
+    affectedPlants: ['Tomato', 'Rose', 'Bean', 'Houseplants'],
+    symptoms: ['Fine stippling', 'Bronzing', 'Fine webbing', 'Leaf drop in severe infestations'],
+    treatment: { steps: ['Inspect leaf undersides', 'Wash foliage with water where appropriate', 'Use an approved miticide only according to its label'] },
+    prevention: { steps: ['Reduce plant stress', 'Inspect new plants before introducing them'] },
+    sources: [{ title: 'UC IPM Spider Mites', url: 'https://ipm.ucanr.edu/' }],
+  },
+  {
+    id: 'kb_seed_root_stress',
+    type: 'symptom',
+    name: 'Root Stress / Overwatering',
+    category: 'environmental stress',
+    description: 'Waterlogged roots can become oxygen-starved and may lead to yellowing, wilting despite wet soil, and root decline.',
+    affectedPlants: ['Houseplants', 'Herbs', 'Vegetables'],
+    symptoms: ['Yellowing leaves', 'Wilting in wet soil', 'Slow growth'],
+    treatment: { steps: ['Check soil moisture and drainage', 'Allow the appropriate drying interval for the species', 'Inspect roots if symptoms persist'] },
+    prevention: { steps: ['Use containers with drainage', 'Match watering frequency to plant and substrate needs'] },
+    sources: [{ title: 'RHS', url: 'https://www.rhs.org.uk/' }],
+  },
+  {
+    id: 'kb_seed_nitrogen_deficiency',
+    type: 'nutrient_deficiency',
+    name: 'Nitrogen Deficiency',
+    category: 'nutrient deficiency',
+    description: 'Insufficient available nitrogen commonly causes older leaves to become uniformly pale or yellow while growth slows.',
+    affectedPlants: ['Vegetables', 'Herbs', 'Ornamentals'],
+    symptoms: ['Older leaves yellow first', 'Reduced growth', 'Small pale foliage'],
+    treatment: { steps: ['Confirm the diagnosis before fertilizing', 'Use a balanced fertilizer appropriate for the crop and label directions'] },
+    prevention: { steps: ['Maintain appropriate soil fertility', 'Use soil testing where practical'] },
+    sources: [{ title: 'University extension plant nutrition resources', url: 'https://extension.umn.edu/' }],
+  },
+];
+
+async function main() {
+  for (const item of knowledge) {
+    await prisma.knowledgeItem.upsert({
+      where: { id: item.id },
+      update: { ...item, isActive: true, lastUpdated: new Date() },
+      create: { ...item, isActive: true },
+    });
+  }
+
+  await prisma.modelMetadata.upsert({
+    where: { version: 'plantinia-baseline-1.0' },
+    update: { isActive: true, status: 'active', lastUpdated: new Date() },
+    create: {
+      name: 'Plantinia Baseline Vision',
+      version: 'plantinia-baseline-1.0',
+      type: 'disease_detection',
+      status: 'active',
+      description: 'Baseline provider-agnostic Plantinia diagnosis metadata. Replace with the validated custom model when available.',
+      trainedOn: 'Provider-assisted baseline',
+      classes: ['healthy', 'disease', 'pest', 'environmental stress'],
+      isActive: true,
+    },
+  });
+
+  console.log(`Seeded ${knowledge.length} knowledge records and 1 model metadata record.`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+}).finally(async () => {
+  await prisma.$disconnect();
+});
+
+
+==================== RATE LIMIT ====================
+
+NO rate-limit.ts
+
+==================== STORAGE ====================
+
+import { env } from '../env';
+
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']);
+
+export interface IStorageProvider {
+  uploadFile(fileBuffer: Buffer | Uint8Array, filename: string, mimeType: string): Promise<string>;
+  deleteFile(fileUrl: string): Promise<void>;
+}
+
+function validateFile(fileBuffer: Buffer | Uint8Array, filename: string, mimeType: string) {
+  if (fileBuffer.byteLength <= 0 || fileBuffer.byteLength > MAX_FILE_BYTES) throw new Error('Media file must be between 1 byte and 8 MB');
+  if (!ALLOWED_MIME.has(mimeType.toLowerCase())) throw new Error('Unsupported media type');
+  if (!filename || filename.length > 180 || /[\\/]/.test(filename)) throw new Error('Invalid storage filename');
+}
+
+class LocalStorageProvider implements IStorageProvider {
+  async uploadFile(fileBuffer: Buffer | Uint8Array, filename: string, mimeType: string): Promise<string> {
+    validateFile(fileBuffer, filename, mimeType);
+    return `data:${mimeType};base64,${Buffer.from(fileBuffer).toString('base64')}`;
+  }
+  async deleteFile(_fileUrl: string): Promise<void> {}
+}
+
+class S3CompatibleStorageProvider implements IStorageProvider {
+  async uploadFile(fileBuffer: Buffer | Uint8Array, filename: string, mimeType: string): Promise<string> {
+    validateFile(fileBuffer, filename, mimeType);
+    if (!env.S3_ENDPOINT || !env.S3_BUCKET) throw new Error('S3/R2 storage is not configured');
+    const cleanFilename = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const uploadUrl = `${env.S3_ENDPOINT.replace(/\/$/, '')}/${encodeURIComponent(env.S3_BUCKET)}/${encodeURIComponent(cleanFilename)}`;
+    const res = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: new Uint8Array(fileBuffer) });
+    if (!res.ok) throw new Error(`Storage upload failed: ${res.status}`);
+    return env.NEXT_PUBLIC_STORAGE_PUBLIC_URL ? `${env.NEXT_PUBLIC_STORAGE_PUBLIC_URL.replace(/\/$/, '')}/${encodeURIComponent(cleanFilename)}` : uploadUrl;
+  }
+
+  async deleteFile(fileUrl: string): Promise<void> {
+    if (!env.S3_ENDPOINT) return;
+    try {
+      const target = new URL(fileUrl);
+      const endpoint = new URL(env.S3_ENDPOINT);
+      if (target.origin !== endpoint.origin) throw new Error('Refusing to delete a file outside configured storage');
+      await fetch(target, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete file from storage', e);
+    }
+  }
+}
+
+class SupabaseStorageProvider implements IStorageProvider {
+  async uploadFile(fileBuffer: Buffer | Uint8Array, filename: string, mimeType: string): Promise<string> {
+    validateFile(fileBuffer, filename, mimeType);
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Supabase storage is not configured');
+    const cleanFilename = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const bucket = encodeURIComponent(env.SUPABASE_STORAGE_BUCKET);
+    const objectPath = encodeURIComponent(cleanFilename);
+    const response = await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/${bucket}/${objectPath}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': mimeType, 'x-upsert': 'false' },
+      body: new Uint8Array(fileBuffer),
+    });
+    if (!response.ok) throw new Error(`Supabase storage upload failed: ${response.status}`);
+    return `${env.NEXT_PUBLIC_STORAGE_PUBLIC_URL?.replace(/\/$/, '') || `${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${bucket}`}/${objectPath}`;
+  }
+
+  async deleteFile(fileUrl: string): Promise<void> {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return;
+    try {
+      const target = new URL(fileUrl);
+      const base = new URL(env.SUPABASE_URL);
+      if (target.origin !== base.origin) throw new Error('Refusing to delete a file outside configured Supabase storage');
+      const marker = '/storage/v1/object/';
+      const index = target.pathname.indexOf(marker);
+      if (index < 0) return;
+      const objectPath = target.pathname.slice(index + marker.length);
+      await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/${objectPath}`, { method: 'DELETE', headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY } });
+    } catch (e) {
+      console.error('Failed to delete Supabase object', e);
+    }
+  }
+}
+
+export function getStorageProvider(): IStorageProvider {
+  if (env.STORAGE_PROVIDER === 'supabase') return new SupabaseStorageProvider();
+  if (env.STORAGE_PROVIDER === 's3' || env.STORAGE_PROVIDER === 'r2') return new S3CompatibleStorageProvider();
+  return new LocalStorageProvider();
+}
+
+
+==================== AI ====================
+
+import { IAIEngine } from './types';
+import { GeminiAIEngine } from './gemini';
+import { OpenAIAIEngine } from './openai';
+import { CustomInferenceAIEngine } from './custom';
+import { MockAIEngine } from './mock';
+import { env } from '../env';
+
+export function getAIEngine(): IAIEngine {
+  const provider = env.AI_PROVIDER;
+
+  if (provider === 'gemini') {
+    if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured');
+    return new GeminiAIEngine();
+  }
+  if (provider === 'openai') {
+    if (!env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not configured');
+    return new OpenAIAIEngine();
+  }
+  if (provider === 'custom') {
+    if (!env.CUSTOM_INFERENCE_URL) throw new Error('CUSTOM_INFERENCE_URL is not configured');
+    return new CustomInferenceAIEngine();
+  }
+  if (provider === 'mock') return new MockAIEngine();
+
+  throw new Error(`Unsupported AI provider: ${provider}`);
+}
+
+export * from './types';
+
+
+==================== CAPACITOR ====================
+
+import type { CapacitorConfig } from '@capacitor/cli';
+
+const hostedUrl = process.env.CAPACITOR_SERVER_URL?.trim();
+
+const config: CapacitorConfig = {
+  appId: 'com.plantinia.app',
+  appName: 'Plantinia',
+  // The Next.js app contains server APIs, so production Android builds should point
+  // to the deployed HTTPS app rather than pretending the API can be statically bundled.
+  webDir: 'out',
+  server: {
+    ...(hostedUrl ? { url: hostedUrl } : {}),
+    androidScheme: 'https',
+    cleartext: false,
+  },
+  plugins: {
+    Camera: { presentationStyle: 'fullscreen' },
+    PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
+  },
+};
+
+export default config;
+
+
+==================== DONE ====================
+
+Audit file: E:\Desktop\Plantinia\plantinia-full-audit.txt
