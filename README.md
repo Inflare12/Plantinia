@@ -1,22 +1,73 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Plantinia
 
-# Run and deploy your AI Studio app
+Plantinia is an AI plant doctor SaaS with a web application, mobile-ready architecture, evidence-backed plant knowledge, custom vision models, and a local training pipeline.
 
-This contains everything you need to run your app locally.
+## Application
 
-View your app in AI Studio: https://ai.studio/apps/e59b9c13-18d2-465b-91ef-704be6476c22
+The production application is built with Next.js, React, TypeScript, Prisma/PostgreSQL, and Capacitor. It supports plant diagnosis, plant tracking, reports, care plans, AI chat, authentication, subscriptions, weather context, media uploads, and production deployment.
 
-## Run Locally
+## AI architecture
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+Plantinia uses a hybrid architecture rather than asking one model to memorize everything:
 
+```text
+Image / video
+     ↓
+Vision model
+     ↓
+Observed features + candidate predictions
+     ↓
+Plantinia Book / retrieval / evidence
+     ↓
+Reasoning LLM
+     ↓
+Dr. Flora
+```
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
-7. If you have already published your app in AI Studio, please [request upload key reset](https://support.google.com/googleplay/android-developer/answer/9842756#zippy=%2Crequest-an-upload-key-reset) in Google Play Console.
+The Plantinia Book is intended to remain the factual evidence layer. The model should preserve uncertainty and follow **SYMPTOM != DIAGNOSIS**.
+
+## Training
+
+Training is deliberately separate from the Vercel production runtime. Heavy model training runs locally or on dedicated GPU infrastructure.
+
+See [`training/README.md`](training/README.md) for the complete training system. It supports:
+
+- standalone vision classification
+- SmolLM2 LoRA fine-tuning
+- **joint multimodal training** where vision + language are optimized in one run and exported as one PTN model bundle
+- a separate interactive LLM-only training path
+- CPU/GPU selection
+- batch size 1 and gradient accumulation for low-memory machines
+- deterministic seeds and validation
+- model manifests and reproducible model/component paths
+
+Example:
+
+```powershell
+python training\train.py --mode joint --config training\configs\PTN-Watermeal1.json
+```
+
+`PTN-Watermeal1` is the first planned water-status model. Its initial labels are healthy, underwatered, and overwatered. Do not start training until its dataset has verified labels and clean train/validation/test separation.
+
+The local SmolLM2-135M-Instruct weights are not committed to Git; see `models/SmolLM2-135M-Instruct/README.md`.
+
+## Research
+
+Phase 1 Plantinia Book research is recorded in [`docs/PLANTINIA_BOOK_PHASE1.md`](docs/PLANTINIA_BOOK_PHASE1.md). Research is treated as a working knowledge source until claims, sources, treatments, and contradictions are validated.
+
+## Run the web app locally
+
+Prerequisites: Node.js 24.x, PostgreSQL/Neon, and the environment variables in `.env.example`.
+
+```powershell
+npm install
+npx prisma generate
+npm test
+npx tsc --noEmit
+npm run build
+npm run dev
+```
+
+## Deployment
+
+The Next.js application is designed for Vercel-style deployment. Production secrets, storage, payment providers, email, database, and AI provider configuration are validated at runtime where appropriate. Model training is not part of the Vercel web request path.
