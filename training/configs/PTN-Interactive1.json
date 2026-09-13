@@ -1,0 +1,32 @@
+{
+  "model_name": "PTN-Interactive1",
+  "mode": "interactive",
+  "llm": {
+    "base_model": "models/SmolLM2-135M-Instruct",
+    "max_length": 384,
+    "lora": true,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05
+  },
+  "data": {
+    "train": "datasets/PlantiniaBook/interactive_train.jsonl",
+    "valid": "datasets/PlantiniaBook/interactive_valid.jsonl"
+  },
+  "training": {
+    "epochs": 1,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 0.00002,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.05,
+    "max_grad_norm": 1.0,
+    "seed": 42,
+    "device": "auto",
+    "num_workers": 0,
+    "log_every": 10,
+    "eval_every": 100,
+    "save_every": 250
+  },
+  "output_dir": "training/runs/PTN-Interactive1"
+}
