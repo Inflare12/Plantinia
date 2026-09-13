@@ -3,8 +3,9 @@ import { env } from '../env';
 import { validateDiagnosisOutput, validateIdentifyOutput, validateChatOutput } from './validation';
 
 const MAX_CONTEXT_LENGTH = 16000;
+type OpenAIRequestBody = Record<string, unknown>;
 
-async function openAIRequest(apiKey: string, model: string, body: unknown): Promise<any> {
+async function openAIRequest(apiKey: string, model: string, body: OpenAIRequestBody): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {
@@ -21,8 +22,8 @@ async function openAIRequest(apiKey: string, model: string, body: unknown): Prom
   }
 }
 
-function contentOf(data: any): string {
-  const content = data.choices?.[0]?.message?.content;
+function contentOf(data: unknown): string {
+  const content = (data as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) throw new Error('Empty response from OpenAI');
   return content.trim();
 }
