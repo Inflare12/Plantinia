@@ -1,22 +1,21 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
+const hostedUrl = process.env.CAPACITOR_SERVER_URL?.trim();
+
 const config: CapacitorConfig = {
   appId: 'com.plantinia.app',
   appName: 'Plantinia',
+  // The Next.js app contains server APIs, so production Android builds should point
+  // to the deployed HTTPS app rather than pretending the API can be statically bundled.
   webDir: 'out',
   server: {
+    ...(hostedUrl ? { url: hostedUrl } : {}),
     androidScheme: 'https',
-    // In local development with emulator or physical device, uncomment url:
-    // url: 'http://10.0.2.2:3000',
-    cleartext: true
+    cleartext: false,
   },
   plugins: {
-    Camera: {
-      presentationStyle: 'fullscreen',
-    },
-    PushNotifications: {
-      presentationOptions: ['badge', 'sound', 'alert'],
-    },
+    Camera: { presentationStyle: 'fullscreen' },
+    PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
   },
 };
 
