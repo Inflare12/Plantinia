@@ -4,7 +4,7 @@ import argparse, json
 from pathlib import Path
 from PIL import Image
 
-LABELS={"healthy","underwatered","overwatered"}
+LABELS={"healthy","water_stress_3_days","water_stress_6_days","water_stress_9_days"}
 ROOT=Path(__file__).resolve().parents[1]
 
 def p(v):
