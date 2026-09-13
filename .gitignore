@@ -3,6 +3,12 @@
 /.pnp
 .pnp.js
 
+# Python training environments
+.venv-training/
+.venv/
+__pycache__/
+*.py[cod]
+
 # Testing
 /coverage
 
@@ -12,6 +18,18 @@
 
 # Production
 /build
+
+# Plantinia ML data and generated artifacts
+/datasets/
+/training/runs/
+/models/*
+!/models/SmolLM2-135M-Instruct/
+!/models/SmolLM2-135M-Instruct/README.md
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.onnx
 
 # Misc
 .DS_Store
@@ -47,8 +65,6 @@ next-env.d.ts
 /.idea/libraries
 /.idea/modules.xml
 /.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
 /captures
 .externalNativeBuild
 .cxx
