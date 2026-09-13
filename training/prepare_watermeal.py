@@ -2,8 +2,9 @@
 
 Expected source layout:
   <source>/healthy/*
-  <source>/underwatered/*
-  <source>/overwatered/*
+  <source>/water_stress_3_days/*
+  <source>/water_stress_6_days/*
+  <source>/water_stress_9_days/*
 
 Creates vision JSONL plus joint multimodal JSONL. The same image is paired with
 an instruction/response so the single joint model learns both visual class
@@ -16,7 +17,7 @@ import json
 import random
 from pathlib import Path
 
-LABELS = ["healthy", "underwatered", "overwatered"]
+LABELS = ["healthy", "water_stress_3_days", "water_stress_6_days", "water_stress_9_days"]
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
@@ -28,14 +29,16 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 def response_for(label: str) -> str:
     if label == "healthy":
         return "The image is consistent with a healthy-looking plant. Water status should still be confirmed with soil moisture and recent watering history."
-    if label == "underwatered":
-        return "The image is consistent with underwatering-related stress. Confirm the diagnosis with soil moisture, watering history, pot drainage, and other symptoms before changing the watering routine."
-    return "The image is consistent with overwatering-related stress. Confirm the diagnosis with soil moisture, drainage, watering frequency, and root or leaf symptoms before changing the watering routine."
+    if label == "water_stress_3_days":
+        return "The image is consistent with mild water stress associated with three days without irrigation in the source experiment. Confirm with soil moisture and recent watering history before changing the watering routine."
+    if label == "water_stress_6_days":
+        return "The image is consistent with moderate water stress associated with six days without irrigation in the source experiment. Confirm with soil moisture and recent watering history before changing the watering routine."
+    return "The image is consistent with severe water stress associated with nine days without irrigation in the source experiment. Confirm with soil moisture and recent watering history before changing the watering routine."
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--source", required=True, help="Folder containing healthy/underwatered/overwatered")
+    p.add_argument("--source", required=True, help="Folder containing healthy/water_stress_3_days/water_stress_6_days/water_stress_9_days")
     p.add_argument("--output", default="datasets/Watermeal")
     p.add_argument("--valid-ratio", type=float, default=0.15)
     p.add_argument("--test-ratio", type=float, default=0.15)
@@ -64,8 +67,6 @@ def main() -> None:
             rel = image.relative_to(Path.cwd()) if image.is_relative_to(Path.cwd()) else image
             rows.append({"image": str(rel), "label": label})
 
-    # Shuffle once, then split. For small datasets, preserve class representation
-    # by splitting within each class rather than globally.
     splits = {"train": [], "valid": [], "test": []}
     for label in LABELS:
         class_rows = [r for r in rows if r["label"] == label]
@@ -84,28 +85,23 @@ def main() -> None:
         rng.shuffle(splits[name])
         write_jsonl(output / f"{name}.jsonl", splits[name])
 
-    joint_train = []
-    joint_valid = []
-    for row in splits["train"]:
-        joint_train.append({
+    def joint_row(row: dict) -> dict:
+        return {
             "image": row["image"],
-            "prompt": "Inspect this plant image for water status. Classify it as healthy, underwatered, or overwatered, and explain the evidence conservatively.",
+            "label": row["label"],
+            "prompt": "Inspect this plant image for water status. Classify it using the four experimental water-stress classes and explain the evidence conservatively.",
             "response": f"Classification: {row['label']}. {response_for(row['label'])}",
-        })
-    for row in splits["valid"]:
-        joint_valid.append({
-            "image": row["image"],
-            "prompt": "Inspect this plant image for water status. Classify it as healthy, underwatered, or overwatered, and explain the evidence conservatively.",
-            "response": f"Classification: {row['label']}. {response_for(row['label'])}",
-        })
-    write_jsonl(output / "joint_train.jsonl", joint_train)
-    write_jsonl(output / "joint_valid.jsonl", joint_valid)
+        }
+
+    write_jsonl(output / "joint_train.jsonl", [joint_row(r) for r in splits["train"]])
+    write_jsonl(output / "joint_valid.jsonl", [joint_row(r) for r in splits["valid"]])
     (output / "dataset_manifest.json").write_text(json.dumps({
         "labels": LABELS,
         "counts_before_split": counts,
         "split_counts": {k: len(v) for k, v in splits.items()},
         "seed": args.seed,
-        "warning": "Labels must come from a reliable water-status dataset; generated responses do not create new ground-truth visual labels."
+        "source": "fearro/IoT_monitoring_hemp",
+        "warning": "Labels come from the source experiment; generated responses do not create new visual ground truth."
     }, indent=2), encoding="utf-8")
     print(json.dumps({"output": str(output.resolve()), "counts": {k: len(v) for k, v in splits.items()}}, indent=2))
 
