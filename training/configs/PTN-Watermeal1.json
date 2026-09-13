@@ -1,0 +1,43 @@
+{
+  "model_name": "PTN-Watermeal1",
+  "mode": "joint",
+  "vision": {
+    "backbone": "mobilenet_v3_small",
+    "num_classes": 3,
+    "labels": ["healthy", "underwatered", "overwatered"],
+    "image_size": 224,
+    "pretrained": true
+  },
+  "llm": {
+    "base_model": "models/SmolLM2-135M-Instruct",
+    "max_length": 256,
+    "lora": true,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05
+  },
+  "data": {
+    "vision_train": "datasets/Watermeal/train.jsonl",
+    "vision_valid": "datasets/Watermeal/valid.jsonl",
+    "vision_test": "datasets/Watermeal/test.jsonl",
+    "joint_train": "datasets/Watermeal/joint_train.jsonl",
+    "joint_valid": "datasets/Watermeal/joint_valid.jsonl"
+  },
+  "training": {
+    "epochs": 1,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 0.00002,
+    "vision_learning_rate": 0.00005,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.05,
+    "max_grad_norm": 1.0,
+    "seed": 42,
+    "device": "auto",
+    "num_workers": 0,
+    "log_every": 10,
+    "eval_every": 100,
+    "save_every": 250
+  },
+  "output_dir": "training/runs/PTN-Watermeal1"
+}
