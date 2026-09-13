@@ -24,10 +24,9 @@ function validateEnv(): Env {
       if (value.EMAIL_PROVIDER === 'mock') throw new Error('EMAIL_PROVIDER=mock is not allowed in production');
       if (value.EMAIL_PROVIDER === 'smtp' && (!value.SMTP_HOST || !value.SMTP_USER || !value.SMTP_PASSWORD)) throw new Error('SMTP configuration is required in production');
       if (value.EMAIL_PROVIDER === 'resend' && !value.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required in production');
-      // Storage configuration is validated lazily by the storage provider so Next.js
-      // can build server routes without requiring deployment-only secrets at build time.
-      if (value.NEXT_PUBLIC_RAZORPAY_KEY_ID && (!value.RAZORPAY_KEY_SECRET || !value.RAZORPAY_WEBHOOK_SECRET)) throw new Error('Razorpay secret and webhook secret are required when Razorpay is enabled');
-      if (value.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && (!value.STRIPE_SECRET_KEY || !value.STRIPE_WEBHOOK_SECRET)) throw new Error('Stripe secret and webhook secret are required when Stripe is enabled');
+      // Optional storage and payment integrations are validated lazily by their
+      // runtime providers/routes. This prevents Next.js build-time evaluation
+      // from requiring deployment-only secrets.
     }
     return value;
   }
