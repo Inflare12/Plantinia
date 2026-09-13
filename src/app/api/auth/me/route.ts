@@ -4,9 +4,7 @@ import { getSessionUser } from '@/lib/auth/session';
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     return NextResponse.json({
       user: {
@@ -17,13 +15,16 @@ export async function GET(req: NextRequest) {
         subscriptionTier: user.subscriptionTier,
         subscriptionStatus: user.subscriptionStatus,
         creditsRemaining: user.creditsRemaining,
+        videoCreditsRemaining: user.videoCreditsRemaining,
         isEmailVerified: user.isEmailVerified,
         avatarUrl: user.avatarUrl,
-        apiKey: user.apiKey,
+        // Never expose the reusable API key in the normal session endpoint.
+        hasApiKey: Boolean(user.apiKey),
         createdAt: user.createdAt,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error('Auth me error:', error);
+    return NextResponse.json({ error: 'Unable to load account' }, { status: 500 });
   }
 }
