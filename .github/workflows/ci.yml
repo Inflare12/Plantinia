@@ -12,7 +12,7 @@ jobs:
     env:
       NODE_ENV: test
       JWT_SECRET: plantinia-ci-secret-change-me-32-characters-long
-      DATABASE_URL: file:./dev.db
+      DATABASE_URL: ''
       AI_PROVIDER: mock
       EMAIL_PROVIDER: mock
       STORAGE_PROVIDER: local
@@ -24,6 +24,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
@@ -42,5 +43,20 @@ jobs:
 
       - name: Production build
         env:
-          NODE_ENV: development
+          NODE_ENV: production
+          JWT_SECRET: plantinia-ci-production-secret-change-me-32-characters-long
+          DATABASE_URL: postgresql://ci:ci@example.com:5432/plantinia
+          AI_PROVIDER: custom
+          CUSTOM_INFERENCE_URL: https://example.com/inference
+          CUSTOM_INFERENCE_API_KEY: ci-placeholder
+          EMAIL_PROVIDER: smtp
+          SMTP_HOST: smtp.example.com
+          SMTP_PORT: 587
+          SMTP_USER: ci@example.com
+          SMTP_PASSWORD: ci-placeholder
+          STORAGE_PROVIDER: supabase
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+          NEXT_PUBLIC_STORAGE_PUBLIC_URL: https://example.supabase.co/storage/v1/object/public/plantinia-media
+          NEXT_PUBLIC_APP_URL: https://plantinia.example.com
         run: npm run build
