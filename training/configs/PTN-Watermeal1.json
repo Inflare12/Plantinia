@@ -1,5 +1,5 @@
 {
-  "model_name": "PTN-Watermeal1",
+  "model_name": "PTN-Watermeal1.0",
   "mode": "joint",
   "vision": {
     "backbone": "mobilenet_v3_small",
@@ -17,9 +17,6 @@
     "lora_dropout": 0.05
   },
   "data": {
-    "vision_train": "datasets/Watermeal/train.jsonl",
-    "vision_valid": "datasets/Watermeal/valid.jsonl",
-    "vision_test": "datasets/Watermeal/test.jsonl",
     "joint_train": "datasets/Watermeal/joint_train.jsonl",
     "joint_valid": "datasets/Watermeal/joint_valid.jsonl"
   },
@@ -29,15 +26,14 @@
     "gradient_accumulation_steps": 8,
     "learning_rate": 0.00002,
     "vision_learning_rate": 0.00005,
+    "vision_loss_weight": 1.0,
     "weight_decay": 0.01,
     "warmup_ratio": 0.05,
     "max_grad_norm": 1.0,
     "seed": 42,
     "device": "auto",
     "num_workers": 0,
-    "log_every": 10,
-    "eval_every": 100,
-    "save_every": 250
+    "log_every": 10
   },
-  "output_dir": "training/runs/PTN-Watermeal1"
+  "output_dir": "training/runs/PTN-Watermeal1.0"
 }
