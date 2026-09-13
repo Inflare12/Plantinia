@@ -1,62 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth/session';
 import { db } from '@/lib/db/adapter';
+
+const eventSchema = z.object({
+  eventType: z.enum(['diagnosis', 'watering', 'fertilizing', 'pruning', 'repotting', 'note', 'photo']).default('note'),
+  title: z.string().trim().min(1).max(200).default('Garden Update'),
+  description: z.string().trim().max(4000).default(''),
+  imageUrl: z.string().url().max(2000).refine((v) => v.startsWith('https://'), 'Image must use HTTPS').optional(),
+});
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getSessionUser(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const plant = await db.plants.findById(params.id);
-    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) {
-      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
-    }
-
-    const timeline = await db.timeline.listByPlant(params.id);
-    return NextResponse.json({ timeline });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!plant || (plant.userId !== user.id && user.role !== 'admin')) return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
+    return NextResponse.json({ timeline: await db.timeline.listByPlant(params.id) });
+  } catch (error) {
+    console.error('Timeline GET error:', error);
+    return NextResponse.json({ error: 'Unable to load timeline' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getSessionUser(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const plant = await db.plants.findById(params.id);
-    if (!plant || plant.userId !== user.id) {
-      return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
-    }
+    if (!plant || plant.userId !== user.id) return NextResponse.json({ error: 'Plant not found' }, { status: 404 });
 
-    const body = await req.json();
-    const { eventType, title, description, imageUrl } = body;
+    const parsed = eventSchema.safeParse(await req.json());
+    if (!parsed.success) return NextResponse.json({ error: 'Invalid timeline event', details: parsed.error.flatten() }, { status: 400 });
+    const data = parsed.data;
+    const event = await db.timeline.create({ plantId: plant.id, userId: user.id, eventType: data.eventType, title: data.title, description: data.description, imageUrl: data.imageUrl });
 
-    const event = await db.timeline.create({
-      plantId: plant.id,
-      userId: user.id,
-      eventType: eventType || 'note',
-      title: title || 'Garden Update',
-      description: description || '',
-      imageUrl: imageUrl || undefined,
-    });
-
-    // If watering event, update plant lastWateredDate
-    if (eventType === 'watering') {
+    if (data.eventType === 'watering') {
       const now = new Date();
       const next = new Date(now.getTime() + plant.wateringFrequencyDays * 24 * 3600 * 1000);
-      await db.plants.update(plant.id, {
-        lastWateredDate: now.toISOString(),
-        nextWateringDate: next.toISOString(),
-      });
+      await db.plants.update(plant.id, { lastWateredDate: now.toISOString(), nextWateringDate: next.toISOString() });
     }
 
     return NextResponse.json({ event }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error('Timeline POST error:', error);
+    return NextResponse.json({ error: 'Unable to create timeline event' }, { status: 500 });
   }
 }
