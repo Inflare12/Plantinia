@@ -80,6 +80,9 @@ class SupabaseStorageProvider implements IStorageProvider {
 }
 
 export function getStorageProvider(): IStorageProvider {
+  if (env.NODE_ENV === 'production' && env.STORAGE_PROVIDER !== 'supabase') {
+    throw new Error('Production media storage requires STORAGE_PROVIDER=supabase');
+  }
   if (env.STORAGE_PROVIDER === 'supabase') return new SupabaseStorageProvider();
   if (env.STORAGE_PROVIDER === 's3' || env.STORAGE_PROVIDER === 'r2') return new S3CompatibleStorageProvider();
   return new LocalStorageProvider();
