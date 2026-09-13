@@ -115,6 +115,10 @@ def load_llm(base: Path, cfg):
                 targets.append(n.rsplit(".",1)[-1])
         if not targets: raise RuntimeError("No compatible LoRA layers found")
         llm = get_peft_model(llm, LoraConfig(r=int(l.get("lora_r",8)), lora_alpha=int(l.get("lora_alpha",16)), lora_dropout=float(l.get("lora_dropout",0.05)), bias="none", task_type="CAUSAL_LM", target_modules=sorted(set(targets))))
+    # Some local model configs load weights as bfloat16. The training path
+    # supports CPU, where the multimodal projector produces float32 tensors.
+    # Keep the LLM in float32 so its Linear layers receive the same dtype.
+    llm = llm.float()
     return tok, llm
 
 
